@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Шахматы с произвольной расстановкой фигур и ИИ-противником">
+    <title>Шахматы — Свободная расстановка</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ===== MAIN MENU SCREEN ===== -->
+    <div id="screen-menu" class="screen active">
+        <div class="menu-bg-pieces" aria-hidden="true"></div>
+        <div class="menu-container">
+            <h1 class="menu-title">
+                <span class="title-icon">♚</span>
+                <span>Шахматы</span>
+            </h1>
+            <p class="menu-subtitle">Расставь фигуры. Обыграй машину.</p>
+            <div class="menu-buttons">
+                <button id="btn-new-run" class="btn btn-primary btn-large" style="width:100%; margin-bottom:10px;">
+                    <span class="btn-icon">&#127984;</span> &#1053;&#1072;&#1095;&#1072;&#1090;&#1100; &#1079;&#1072;&#1073;&#1077;&#1075; (Roguelike)
+                </button>
+                <div style="display:flex; gap:10px; margin-bottom:10px;">
+                    <button id="btn-new-game" class="btn btn-secondary" style="flex:1;">
+                        <span class="btn-icon">&#9823;</span> &#1057;&#1074;&#1086;&#1073;&#1086;&#1076;&#1085;&#1072;&#1103;
+                    </button>
+                    <button id="btn-creative" class="btn btn-secondary" style="flex:1; background: linear-gradient(135deg, rgba(157,147,250,0.15), rgba(240,192,72,0.15)); border-color: rgba(157,147,250,0.4);">
+                        <span class="btn-icon">&#127912;</span> &#1058;&#1074;&#1086;&#1088;&#1095;&#1077;&#1089;&#1082;&#1080;&#1081;
+                    </button>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <a href="editor.html" target="_blank" class="btn btn-outline" style="text-decoration:none; flex:1; text-align:center;">
+                        <span class="btn-icon">&#128736;</span> &#1056;&#1077;&#1076;&#1072;&#1082;&#1090;&#1086;&#1088;
+                    </a>
+                </div>
+            </div>
+            <div class="difficulty-selector">
+                <label>Сложность ИИ</label>
+                <div class="difficulty-options">
+                    <button class="diff-btn" data-depth="2">Легко</button>
+                    <button class="diff-btn active" data-depth="3">Средне</button>
+                    <button class="diff-btn" data-depth="4">Сложно</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== SETUP SCREEN ===== -->
+    <div id="screen-setup" class="screen">
+        <div class="setup-layout">
+            <!-- Inventory Panel -->
+            <aside class="inventory-panel glass-panel">
+                <h2 class="panel-title">Ваша Армия</h2>
+                <p class="panel-hint">Фигуры для расстановки</p>
+                <div id="inventory" class="inventory-grid"></div>
+
+                <div class="stash-scroll-wrap">
+                    <h2 class="panel-title" style="margin-top:12px;">Сундук Предметов</h2>
+                    <p class="panel-hint">Перетащите на ваши фигуры или кликните фигуру</p>
+                    <div id="player-stash-setup" class="stash-grid"></div>
+                </div>
+
+                <div class="inventory-actions" style="margin-top:12px; flex-shrink:0;">
+                    <button id="btn-standard-setup" class="btn btn-small btn-accent">
+                        ♟ Стандарт
+                    </button>
+                    <button id="btn-clear-board" class="btn btn-small btn-outline">
+                        ✕ Очистить
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Board Area -->
+            <main class="board-area">
+                <div class="board-frame">
+                    <div class="board-labels-top">
+                        <span>a</span><span>b</span><span>c</span><span>d</span>
+                        <span>e</span><span>f</span><span>g</span><span>h</span>
+                    </div>
+                    <div class="board-with-labels">
+                        <div class="board-labels-left">
+                            <span>8</span><span>7</span><span>6</span><span>5</span>
+                            <span>4</span><span>3</span><span>2</span><span>1</span>
+                        </div>
+                        <div id="board-setup" class="chess-board"></div>
+                        <div class="board-labels-right">
+                            <span>8</span><span>7</span><span>6</span><span>5</span>
+                            <span>4</span><span>3</span><span>2</span><span>1</span>
+                        </div>
+                    </div>
+                    <div class="board-labels-bottom">
+                        <span>a</span><span>b</span><span>c</span><span>d</span>
+                        <span>e</span><span>f</span><span>g</span><span>h</span>
+                    </div>
+                </div>
+                <div class="setup-controls">
+                    <button id="btn-start-game" class="btn btn-primary btn-large" disabled>
+                        <span class="btn-icon">▶</span> Начать игру
+                    </button>
+                    <button id="btn-back-menu" class="btn btn-outline btn-small">
+                        ← Назад в меню
+                    </button>
+                    <p id="setup-warning" class="warning-text">Необходимо разместить короля!</p>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- ===== SHOP SCREEN ===== -->
+    <div id="screen-shop" class="screen">
+        <div class="shop-layout glass-panel" style="width: 800px; max-width: 90vw; margin: 50px auto; padding: 30px;">
+            <h1 class="shop-title" style="margin-top:0; color:var(--accent-color);">Торговец</h1>
+            <p class="shop-subtitle">Подготовьте свою армию. Текущее золото: <strong id="shop-gold-display" class="gold-text">0</strong> 🪙</p>
+            
+            <div class="shop-columns" style="display:flex; gap:30px; margin-top:20px;">
+                <div class="shop-items-area" style="flex:2;">
+                    <h3 style="border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">Товары</h3>
+                    <div id="shop-items" class="shop-grid" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:15px;"></div>
+                </div>
+                <div class="shop-stash-area" style="flex:1;">
+                    <h3 style="border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">Ваш сундук</h3>
+                    <div id="shop-stash" class="stash-grid" style="display:flex; flex-wrap:wrap; gap:10px;"></div>
+                    <p style="font-size:0.8em; color:#a0a0b0; margin-top:10px;">Кликните по предмету в сундуке, чтобы продать его за полцены.</p>
+                </div>
+            </div>
+
+            <div class="shop-controls" style="margin-top:30px; text-align:right;">
+                <button id="btn-leave-shop" class="btn btn-primary btn-large">К следующему бою ➔</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== GAME SCREEN ===== -->
+    <div id="screen-game" class="screen">
+        <div class="game-layout">
+            <!-- Left Info Panel -->
+            <aside class="info-panel glass-panel">
+                <div class="player-card opponent">
+                    <div class="player-avatar">♚</div>
+                    <div class="player-info">
+                        <span class="player-name">Компьютер</span>
+                        <span id="black-captured" class="captured-pieces"></span>
+                    </div>
+                    <div id="black-timer" class="player-timer"></div>
+                </div>
+
+                <div id="game-status" class="game-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Ваш ход</span>
+                </div>
+
+                <div class="player-card player">
+                    <div class="player-avatar">♔</div>
+                    <div class="player-info">
+                        <span class="player-name">Вы</span>
+                        <div class="run-stats" style="font-size:0.85em; margin:5px 0;">
+                            <span id="run-gold" class="gold-text" style="color:#f0c048; font-weight:bold;">0 🪙</span> | 
+                            <span id="run-round" style="color:#a0a0b0;">Раунд 1/3</span>
+                        </div>
+                        <span id="white-captured" class="captured-pieces"></span>
+                    </div>
+                    <div id="white-timer" class="player-timer"></div>
+                </div>
+
+                <div class="game-actions">
+                    <button id="btn-undo" class="btn btn-small btn-outline">↩ Отменить ход</button>
+                    <button id="btn-resign" class="btn btn-small btn-danger">🏳 Сдаться</button>
+                    <button id="btn-new-game-2" class="btn btn-small btn-accent">♟ Новая игра</button>
+                </div>
+            </aside>
+
+            <!-- Game Board -->
+            <main class="board-area">
+                <div class="board-frame">
+                    <div class="board-labels-top">
+                        <span>a</span><span>b</span><span>c</span><span>d</span>
+                        <span>e</span><span>f</span><span>g</span><span>h</span>
+                    </div>
+                    <div class="board-with-labels">
+                        <div class="board-labels-left">
+                            <span>8</span><span>7</span><span>6</span><span>5</span>
+                            <span>4</span><span>3</span><span>2</span><span>1</span>
+                        </div>
+                        <div id="board-game" class="chess-board"></div>
+                        <div class="board-labels-right">
+                            <span>8</span><span>7</span><span>6</span><span>5</span>
+                            <span>4</span><span>3</span><span>2</span><span>1</span>
+                        </div>
+                    </div>
+                    <div class="board-labels-bottom">
+                        <span>a</span><span>b</span><span>c</span><span>d</span>
+                        <span>e</span><span>f</span><span>g</span><span>h</span>
+                    </div>
+                </div>
+            </main>
+
+            <!-- Move History + In-Game Stash -->
+            <aside class="history-panel glass-panel">
+                <h2 class="panel-title">История ходов</h2>
+                <div id="move-history" class="move-history"></div>
+
+                <div class="ingame-stash-section" id="ingame-stash-section" style="display:none;">
+                    <h3 class="panel-title" style="font-size:0.85rem; margin-top:14px; padding-top:12px; border-top:1px solid var(--glass-border);">🎒 Сундук</h3>
+                    <div id="ingame-stash" class="stash-grid" style="max-height:180px;"></div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <!-- ===== GAME OVER MODAL ===== -->
+    <div id="modal-gameover" class="modal-overlay">
+        <div class="modal glass-panel">
+            <div id="gameover-icon" class="modal-icon">♚</div>
+            <h2 id="gameover-title" class="modal-title">Шах и мат!</h2>
+            <p id="gameover-text" class="modal-text">Вы победили!</p>
+            <div class="modal-buttons">
+                <button id="btn-play-again" class="btn btn-primary">Играть снова</button>
+                <button id="btn-to-menu" class="btn btn-outline">В меню</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Promotion Modal -->
+    <div id="modal-promotion" class="modal-overlay">
+        <div class="modal glass-panel promotion-modal">
+            <h2 class="modal-title">Превращение пешки</h2>
+            <div id="promotion-choices" class="promotion-choices"></div>
+        </div>
+    </div>
+
+    <!-- ===== PIECE INVENTORY MODAL ===== -->
+    <div id="modal-piece-inv" class="modal-overlay">
+        <div class="modal glass-panel piece-inv-modal">
+            <button id="piece-inv-close" class="piece-inv-close" title="Закрыть">&times;</button>
+            <div class="piece-inv-header">
+                <span id="piece-inv-icon" class="piece-inv-icon">&#9812;</span>
+                <div>
+                    <h2 id="piece-inv-title" class="modal-title" style="margin:0;">Король</h2>
+                    <span id="piece-inv-subtitle" class="piece-inv-subtitle">Слоты экипировки</span>
+                </div>
+            </div>
+
+            <div class="piece-inv-slots" id="piece-inv-slots">
+                <div class="piece-inv-slot" data-slot="0">
+                    <div class="slot-label">Слот 1</div>
+                    <div class="slot-content empty">Пусто</div>
+                </div>
+                <div class="piece-inv-slot" data-slot="1">
+                    <div class="slot-label">Слот 2</div>
+                    <div class="slot-content empty">Пусто</div>
+                </div>
+                <div class="piece-inv-slot" data-slot="2">
+                    <div class="slot-label">Слот 3</div>
+                    <div class="slot-content empty">Пусто</div>
+                </div>
+            </div>
+
+            <div class="piece-inv-stash-section">
+                <h3 class="piece-inv-stash-title">&#128230; Предметы в сундуке</h3>
+                <div id="piece-inv-stash-list" class="piece-inv-stash-list"></div>
+                <p id="piece-inv-stash-empty" class="piece-inv-empty-msg hidden">Сундук пуст.</p>
+            </div>
+
+            <div class="piece-inv-actions">
+                <button id="piece-inv-remove" class="btn btn-danger btn-small">&#128465; Убрать фигуру</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== CREATIVE MODE MODAL ===== -->
+    <div id="modal-creative" class="modal-overlay">
+        <div class="modal glass-panel" style="width:420px; max-width:90vw; text-align:center;">
+            <div class="modal-icon" style="font-size:3.5rem;">&#127912;</div>
+            <h2 class="modal-title">&#1058;&#1074;&#1086;&#1088;&#1095;&#1077;&#1089;&#1082;&#1080;&#1081; &#1088;&#1077;&#1078;&#1080;&#1084;</h2>
+            <p class="modal-text" style="margin-bottom:24px;">&#1051;&#1102;&#1073;&#1099;&#1077; &#1092;&#1080;&#1075;&#1091;&#1088;&#1099;, &#1083;&#1102;&#1073;&#1072;&#1103; &#1101;&#1082;&#1080;&#1087;&#1080;&#1088;&#1086;&#1074;&#1082;&#1072;. &#1042;&#1099;&#1073;&#1077;&#1088;&#1080; &#1088;&#1077;&#1078;&#1080;&#1084;:</p>
+            <div class="modal-buttons" style="flex-direction:column; gap:12px;">
+                <button id="btn-creative-pvbot" class="btn btn-primary btn-large" style="width:100%;">
+                    &#129302; &#1055;&#1088;&#1086;&#1090;&#1080;&#1074; &#1073;&#1086;&#1090;&#1072;
+                </button>
+                <button id="btn-creative-pvp" class="btn btn-secondary btn-large" style="width:100%;">
+                    &#128101; &#1044;&#1074;&#1072; &#1080;&#1075;&#1088;&#1086;&#1082;&#1072; (&#1086;&#1092;&#1083;&#1072;&#1081;&#1085;)
+                </button>
+                <button id="btn-creative-cancel" class="btn btn-outline btn-small" style="margin-top:8px;">
+                    &#8592; &#1053;&#1072;&#1079;&#1072;&#1076;
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="piece-entity.js"></script>
+    <script src="items-db.js"></script>
+    <script src="encounters.js"></script>
+    <script src="run-manager.js"></script>
+    <script src="chess-engine.js"></script>
+    <script src="chess-ai.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
