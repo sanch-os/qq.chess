@@ -41,10 +41,13 @@
             <div class="difficulty-selector">
                 <label>Сложность ИИ</label>
                 <div class="difficulty-options">
-                    <button class="diff-btn" data-depth="2">Легко</button>
-                    <button class="diff-btn active" data-depth="3">Средне</button>
-                    <button class="diff-btn" data-depth="4">Сложно</button>
+                    <button class="diff-btn" data-mode="very_easy" title="ИИ делает случайные ходы">🐣 Очень легко</button>
+                    <button class="diff-btn" data-mode="easy"      title="ИИ думает поверхностно">🟢 Легко</button>
+                    <button class="diff-btn active" data-mode="normal" title="Стандартная сложность">🔵 Средне</button>
+                    <button class="diff-btn" data-mode="hard"     title="ИИ просчитывает глубже">🔴 Сложно</button>
+                    <button class="diff-btn diff-btn-crazy" data-mode="crazy" title="ИИ специально делает худшие ходы">🤪 Сумасшедший</button>
                 </div>
+                <p id="diff-description" class="diff-description">Стандартный противник. Хорошо думает и неплохо играет.</p>
             </div>
         </div>
     </div>
@@ -65,11 +68,16 @@
                 </div>
 
                 <div class="inventory-actions" style="margin-top:12px; flex-shrink:0;">
-                    <button id="btn-standard-setup" class="btn btn-small btn-accent">
-                        ♟ Стандарт
-                    </button>
-                    <button id="btn-clear-board" class="btn btn-small btn-outline">
-                        ✕ Очистить
+                    <div style="display:flex; gap:8px;">
+                        <button id="btn-standard-setup" class="btn btn-small btn-accent" style="flex:1;">
+                            ♟ Стандарт
+                        </button>
+                        <button id="btn-clear-board" class="btn btn-small btn-outline" style="flex:1;">
+                            ✕ Очистить
+                        </button>
+                    </div>
+                    <button id="btn-setup-black" class="btn btn-small btn-secondary" style="display:none; width:100%; margin-top:8px;">
+                        🔄 Редактировать Черных
                     </button>
                 </div>
             </aside>

@@ -2,6 +2,8 @@
    RunManager — Roguelike run loop
    ============================================ */
 
+const STASH_LIMIT = 99; // Max items in player stash
+
 class RunManager {
     constructor() {
         this.reset();
@@ -14,6 +16,7 @@ class RunManager {
         this.encounters = getEncounters();
         this.totalRounds = this.encounters.length;
         this.playerItems = [];        // Items in player's stash (not equipped)
+        this.bonusPieces = {};        // Extra pieces recruited from surviving enemies
         this.roundResults = [];       // History of round outcomes
         this.state = 'idle';          // idle | setup | playing | shop | victory | defeat
         this.capturesThisRound = 0;
@@ -26,15 +29,40 @@ class RunManager {
         this.active = true;
         this.state = 'starting_items';
 
-        // Give player 2 random starting items
-        this.playerItems = getRandomItems(2);
+        // Give player 12 random starting items
+        this.playerItems = getRandomItems(12);
         this.startingItemsGiven = true;
     }
 
     // --- Round Management ---
     getCurrentEncounter() {
-        if (this.currentRound >= this.encounters.length) return null;
-        return this.encounters[this.currentRound];
+        if (this.currentRound < this.encounters.length) {
+            return this.encounters[this.currentRound];
+        }
+        
+        // Endless Mode: Loop encounters and scale them up
+        const loop = Math.floor(this.currentRound / this.encounters.length);
+        const baseIndex = this.currentRound % this.encounters.length;
+        const baseEncounter = this.encounters[baseIndex];
+        
+        // Generate random extra items for enemy based on loop
+        const extraItems = [];
+        const itemIds = Object.keys(ITEMS_DB);
+        const pieceTypes = ['pawn', 'knight', 'bishop', 'rook', 'queen'];
+        
+        for (let i = 0; i < loop * 2; i++) {
+            const randomItemId = itemIds[Math.floor(Math.random() * itemIds.length)];
+            const randomPiece = pieceTypes[Math.floor(Math.random() * pieceTypes.length)];
+            extraItems.push({ pieceType: randomPiece, pieceIndex: Math.floor(Math.random() * 2), itemId: randomItemId });
+        }
+        
+        return {
+            ...baseEncounter,
+            name: `${baseEncounter.name} (Loop ${loop + 1})`,
+            aiDepth: Math.min(4, baseEncounter.aiDepth + Math.floor(loop / 2)),
+            goldReward: baseEncounter.goldReward + (loop * 30),
+            enemyItems: [...baseEncounter.enemyItems, ...extraItems],
+        };
     }
 
     startRound(engine) {
@@ -86,11 +114,20 @@ class RunManager {
     onCapture(capturer, victim) {
         this.capturesThisRound++;
 
-        // Gold from items
+        // Gold from items and looting
         if (capturer && capturer.color === 'white') {
             const stats = capturer.getStats();
             if (stats.goldPerCapture > 0) {
                 this.gold += stats.goldPerCapture;
+            }
+
+            // Loot items from the killed enemy piece
+            if (victim && victim.color === 'black' && victim instanceof PieceEntity) {
+                victim.getItems().forEach(item => {
+                    if (item && this.playerItems.length < STASH_LIMIT) {
+                        this.playerItems.push({ ...item });
+                    }
+                });
             }
         }
     }
@@ -109,11 +146,43 @@ class RunManager {
         this.roundResults.push({ round: this.currentRound, result: 'win' });
         this.currentRound++;
 
-        if (this.currentRound >= this.totalRounds) {
-            this.state = 'victory';
-        } else {
-            this.state = 'shop';
+        // Endless mode: always go to shop after win, never victory.
+        this.state = 'shop';
+    }
+
+    // Collect all items from player pieces back to stash (called after round win)
+    collectItemsFromBoard(engine) {
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const piece = engine.board[r][c];
+                if (piece && piece.color === 'white' && piece instanceof PieceEntity) {
+                    piece.getItems().forEach(item => {
+                        if (item && this.playerItems.length < STASH_LIMIT) {
+                            this.playerItems.push({ ...item });
+                        }
+                    });
+                    piece.items = [null, null, null];
+                    piece.shield = 0;
+                }
+            }
         }
+    }
+
+    // Loot a single item from a captured enemy piece
+    lootItem(item) {
+        if (item && this.playerItems.length < STASH_LIMIT) {
+            this.playerItems.push({ ...item });
+            return true;
+        }
+        return false;
+    }
+
+    // Recruit surviving enemy piece to player's army
+    recruitPiece(type) {
+        if (type === 'king' || type === 'pawn') return; // Don't recruit enemy kings or pawns (pawns might be too weak/useless to recruit, or maybe we do?)
+        // Let's recruit pawns too, why not?
+        if (type === 'king') return;
+        this.bonusPieces[type] = (this.bonusPieces[type] || 0) + 1;
     }
 
     onRoundLose() {
@@ -142,6 +211,7 @@ class RunManager {
 
     buyItem(item) {
         if (this.gold < item.cost) return false;
+        if (this.playerItems.length >= STASH_LIMIT) return 'full'; // stash full
         this.gold -= item.cost;
         this.playerItems.push({ ...item });
         return true;
@@ -176,6 +246,11 @@ class RunManager {
     unequipItemFromPiece(piece, slot) {
         const item = piece.removeItem(slot);
         if (!item) return false;
+        if (this.playerItems.length >= STASH_LIMIT) {
+            // Stash full — re-equip the item and return false
+            piece.setItem(slot, item);
+            return 'full';
+        }
         this.playerItems.push(item);
         return true;
     }

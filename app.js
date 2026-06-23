@@ -26,6 +26,7 @@
 
     // Generated shop items for current shop visit
     let currentShopItems = [];
+    let selectedDifficulty = 'normal'; // very_easy | easy | normal | hard | crazy
 
     // Inventory for setup (Classic)
     const STANDARD_INVENTORY = [
@@ -37,12 +38,12 @@
         { type: 'pawn', count: 8 },
     ];
     const CREATIVE_INVENTORY = [
-        { type: 'king', count: 1 },
-        { type: 'queen', count: 9 },
-        { type: 'rook', count: 9 },
-        { type: 'bishop', count: 9 },
-        { type: 'knight', count: 9 },
-        { type: 'pawn', count: 8 },
+        { type: 'king', count: 99 },
+        { type: 'queen', count: 99 },
+        { type: 'rook', count: 99 },
+        { type: 'bishop', count: 99 },
+        { type: 'knight', count: 99 },
+        { type: 'pawn', count: 99 },
     ];
     let inventory = [];
 
@@ -100,10 +101,20 @@
                     cell.addEventListener('drop', onSetupDrop);
                     cell.addEventListener('dragleave', onSetupDragLeave);
                 } else {
-                    cell.addEventListener('click', onGameCellClick);
+                    cell.addEventListener('click', (e) => onGameCellClick(e));
                 }
 
+                // Right click / Long press to inspect piece
+                cell.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    const row = parseInt(cell.dataset.row);
+                    const col = parseInt(cell.dataset.col);
+                    const p = engine.getPiece(row, col);
+                    if (p) openPieceInventory(row, col);
+                });
+
                 container.appendChild(cell);
+
             }
         }
         if (mode === 'setup') container.classList.add('setup-mode');
@@ -193,17 +204,72 @@
         }
     }
 
+    function onGameCellClick(e) {
+        if (isAIThinking || engine.gameOver) return;
+        const currentColor = engine.currentTurn;
+
+        // In PvP both colors can click; in PvBot only white
+        if (!isPvP && currentColor !== 'white') return;
+
+        const cell = e.target.closest('.cell');
+        if (!cell) return;
+        const r = parseInt(cell.dataset.row);
+        const c = parseInt(cell.dataset.col);
+        const piece = engine.getPiece(r, c);
+
+        if (selectedCell) {
+            const move = legalMovesForSelected.find(m => m.to.row === r && m.to.col === c);
+            if (move) {
+                if (move.promotion) {
+                    showPromotionModal(selectedCell.row, selectedCell.col, r, c);
+                    return;
+                }
+                executePlayerMove(selectedCell.row, selectedCell.col, r, c);
+                return;
+            }
+            if (piece && piece.color === currentColor) {
+                // If clicking the currently selected piece, open its inventory
+                if (selectedCell.row === r && selectedCell.col === c) {
+                    openPieceInventory(r, c);
+                    deselectPiece();
+                    return;
+                }
+                selectPiece(r, c);
+                return;
+            }
+            deselectPiece();
+            
+            // If clicked an enemy piece while not a move target, open its inventory
+            if (piece && piece.color !== currentColor) {
+                openPieceInventory(r, c);
+            }
+            return;
+        }
+
+        if (piece) {
+            if (piece.color === currentColor) {
+                selectPiece(r, c);
+            } else {
+                openPieceInventory(r, c);
+            }
+        }
+    }
+
     function getCell(container, row, col) {
         return container.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
     }
 
     function resetInventory(creative = false) {
         const source = creative ? CREATIVE_INVENTORY : STANDARD_INVENTORY;
-        inventory = source.map(item => ({
-            type: item.type,
-            remaining: item.count,
-            total: item.count
-        }));
+        inventory = source.map(item => {
+            // Apply recruited pieces in roguelike mode
+            const extra = (!creative && isRoguelikeMode && runManager.bonusPieces[item.type]) ? runManager.bonusPieces[item.type] : 0;
+            return {
+                type: item.type,
+                remaining: item.count + extra,
+                total: item.count + extra
+            };
+        });
         renderInventory();
     }
 
@@ -470,9 +536,71 @@
 
     // --- Shop ---
     function openShop() {
-        // Generate fresh shop items — 9 slots
-        currentShopItems = getShopItems(9, runManager.gold);
+        // Generate fresh shop items — 9 slots (only once per shop visit, not on buy/sell refresh)
+        if (currentShopItems.length === 0 || currentShopItems.every(i => i === null)) {
+            currentShopItems = getShopItems(9, runManager.gold);
+        }
 
+        document.getElementById('shop-gold-display').textContent = runManager.gold;
+
+        const itemsGrid = document.getElementById('shop-items');
+        itemsGrid.innerHTML = '';
+        currentShopItems.forEach((item, index) => {
+            if (!item) return;
+            const el = document.createElement('div');
+            el.className = `shop-item rarity-${item.rarity || 'common'}`;
+            el.dataset.shopIndex = index;
+            el.innerHTML = `
+                <div class="item-icon">${item.icon || '📦'}</div>
+                <div class="item-name">${item.name}</div>
+                <div class="item-cost">${item.cost} 🪙</div>
+                <div class="item-tooltip">${item.description}</div>
+            `;
+            el.addEventListener('click', () => {
+                if (runManager.gold < item.cost) {
+                    el.style.animation = 'shake 0.3s';
+                    setTimeout(() => el.style.animation = '', 300);
+                    return;
+                }
+                const result = runManager.buyItem(item);
+                if (result === 'full') {
+                    el.style.border = '2px solid #ff5555';
+                    el.title = 'Сундук заполнен (99/99)!';
+                    setTimeout(() => { el.style.border = ''; el.title = ''; }, 1500);
+                    return;
+                }
+                currentShopItems[index] = null;
+                refreshShop(); // refresh display without re-rolling
+            });
+
+            itemsGrid.appendChild(el);
+        });
+
+        const stashGrid = document.getElementById('shop-stash');
+        stashGrid.innerHTML = '';
+        runManager.playerItems.forEach((item, index) => {
+            if (!item) return;
+            const el = document.createElement('div');
+            el.className = `stash-item rarity-${item.rarity || 'common'}`;
+            const sellPrice = Math.floor(item.cost / 2);
+            el.innerHTML = `
+                <div class="item-icon">${item.icon || '📦'}</div>
+                <div class="item-tooltip">Продать за ${sellPrice} 🪙<br>${item.description}</div>
+            `;
+            el.addEventListener('click', () => {
+                if (confirm(`Продать ${item.name} за ${sellPrice} 🪙?`)) {
+                    runManager.sellItem(index);
+                    refreshShop();
+                }
+            });
+            stashGrid.appendChild(el);
+        });
+
+        showScreen('shop');
+    }
+
+    // Refresh shop UI without re-rolling items
+    function refreshShop() {
         document.getElementById('shop-gold-display').textContent = runManager.gold;
 
         const itemsGrid = document.getElementById('shop-items');
@@ -497,7 +625,7 @@
                 runManager.gold -= item.cost;
                 runManager.playerItems.push({ ...item });
                 currentShopItems[index] = null;
-                openShop(); // refresh
+                refreshShop();
             });
             itemsGrid.appendChild(el);
         });
@@ -516,13 +644,11 @@
             el.addEventListener('click', () => {
                 if (confirm(`Продать ${item.name} за ${sellPrice} 🪙?`)) {
                     runManager.sellItem(index);
-                    openShop();
+                    refreshShop();
                 }
             });
             stashGrid.appendChild(el);
         });
-
-        showScreen('shop');
     }
 
     // --- Populate Menu Background ---
@@ -592,11 +718,22 @@
             startCreativeMode(true);
         });
 
+        const DIFF_DESCRIPTIONS = {
+            very_easy: '🐣 ИИ делает почти случайные ходы. Отличный старт для новичков!',
+            easy:      '🟢 ИИ думает поверхностно. Легко учиться.',
+            normal:    '🔵 Стандартный противник. Хорошо думает и неплохо играет.',
+            hard:      '🔴 ИИ просчитывает на 4 хода вперёд. Серьёзный вызов.',
+            crazy:     '🤪 ИИ специально делает ХУДШИЕ ходы. Играет в поддавки!',
+        };
+
         document.querySelectorAll('.diff-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                ai.setDepth(parseInt(btn.dataset.depth));
+                selectedDifficulty = btn.dataset.mode;
+                ai.setMode(selectedDifficulty);
+                const descEl = document.getElementById('diff-description');
+                if (descEl) descEl.textContent = DIFF_DESCRIPTIONS[selectedDifficulty] || '';
             });
         });
 
@@ -619,6 +756,51 @@
         document.getElementById('btn-clear-board').addEventListener('click', () => {
             clearSetupPieces();
         });
+
+        const btnSetupBlack = document.getElementById('btn-setup-black');
+        if (btnSetupBlack) {
+            btnSetupBlack.addEventListener('click', () => {
+                if (isBlackSetup) {
+                    // Switch to White
+                    isBlackSetup = false;
+                    resetInventory(true);
+                    
+                    // Update setup-zone
+                    boardSetup.querySelectorAll('.cell').forEach(cell => {
+                        const r = parseInt(cell.dataset.row);
+                        cell.classList.remove('setup-zone');
+                        if (r >= 6) cell.classList.add('setup-zone');
+                    });
+                    
+                    const panelTitle = document.querySelector('.inventory-panel .panel-title');
+                    if (panelTitle) panelTitle.textContent = 'Ваша Армия (Белые)';
+                    btnSetupBlack.innerHTML = '🔄 Редактировать Черных';
+                    
+                    renderBoard(boardSetup);
+                    renderInventory();
+                    updateStartButton();
+                } else {
+                    // Switch to Black
+                    isBlackSetup = true;
+                    resetInventory(true);
+                    
+                    // Update setup-zone
+                    boardSetup.querySelectorAll('.cell').forEach(cell => {
+                        const r = parseInt(cell.dataset.row);
+                        cell.classList.remove('setup-zone');
+                        if (r <= 1) cell.classList.add('setup-zone');
+                    });
+                    
+                    const panelTitle = document.querySelector('.inventory-panel .panel-title');
+                    if (panelTitle) panelTitle.textContent = 'Чёрные — Ваша Армия';
+                    btnSetupBlack.innerHTML = '🔄 Редактировать Белых';
+                    
+                    renderBoard(boardSetup);
+                    renderInventory();
+                    updateStartButton();
+                }
+            });
+        }
 
         document.getElementById('btn-start-game').addEventListener('click', () => {
             startGameFromSetup();
@@ -715,6 +897,13 @@
         const panelTitle = document.querySelector('.inventory-panel .panel-title');
         if (panelTitle) panelTitle.textContent = isPvP ? 'Белые — Ваша Армия' : 'Ваша Армия (Творческий)';
 
+        // Show black setup toggle in creative mode
+        const btnSetupBlack = document.getElementById('btn-setup-black');
+        if (btnSetupBlack) {
+            btnSetupBlack.style.display = '';
+            btnSetupBlack.innerHTML = '🔄 Редактировать Черных';
+        }
+
         updateStartButton();
         showScreen('setup');
         clearSetupOverlay();
@@ -747,6 +936,12 @@
 
         const panelTitle = document.querySelector('.inventory-panel .panel-title');
         if (panelTitle) panelTitle.textContent = 'Чёрные — Ваша Армия';
+
+        const btnSetupBlack = document.getElementById('btn-setup-black');
+        if (btnSetupBlack) {
+            btnSetupBlack.style.display = '';
+            btnSetupBlack.innerHTML = '🔄 Редактировать Белых';
+        }
 
         lastMove = null; // Clear any leftover highlights
         renderBoard(boardSetup);
@@ -801,10 +996,18 @@
         if (isRoguelikeMode) {
             engine.setupBlackStandard();
             runManager.startRound(engine);
-            ai.setDepth(runManager.getCurrentEncounter().aiDepth || 2);
+            const encounter = runManager.getCurrentEncounter();
+            ai.setDepth(encounter.aiDepth || 2);
             document.getElementById('run-gold').textContent = `${runManager.gold} 🪙`;
-            document.getElementById('run-round').textContent = `Раунд ${runManager.currentRound + 1}/${runManager.encounters.length}`;
+            const roundNum = runManager.currentRound + 1;
+            const totalRounds = runManager.encounters.length;
+            if (encounter.isBoss) {
+                document.getElementById('run-round').textContent = `⚔️ БОСС ${roundNum}/${totalRounds}: ${encounter.bossName || encounter.name}`;
+            } else {
+                document.getElementById('run-round').textContent = `Раунд ${roundNum}/${totalRounds}: ${encounter.name}`;
+            }
             document.getElementById('btn-undo').style.display = 'none';
+
         } else if (isCreativeMode && isPvP) {
             // PvP: black already placed, don't setup standard
             document.getElementById('run-gold').textContent = '';
@@ -873,22 +1076,28 @@
         if (!piece || !(piece instanceof PieceEntity)) return;
 
         pieceInvTarget = { row, col };
+        const isReadOnly = currentScreen === 'game';
 
         // Header
         document.getElementById('piece-inv-icon').textContent = PIECE_SYMBOLS[piece.color]?.[piece.type] || '♟';
         document.getElementById('piece-inv-title').textContent = PIECE_NAMES[piece.type] || piece.type;
-        document.getElementById('piece-inv-subtitle').textContent = `Слоты экипировки (${piece.getItems().length}/3)`;
+        document.getElementById('piece-inv-subtitle').textContent = isReadOnly ? 'Экипированные предметы' : `Слоты экипировки (${piece.getItems().length}/3)`;
 
-        renderPieceInventorySlots(piece);
-        renderPieceInventoryStash(piece);
+        renderPieceInventorySlots(piece, isReadOnly);
+        renderPieceInventoryStash(piece, isReadOnly);
 
-        // Bind remove button
+        // Bind remove button (hide in read-only)
         const removeBtn = document.getElementById('piece-inv-remove');
-        const newRemoveBtn = removeBtn.cloneNode(true);
-        removeBtn.replaceWith(newRemoveBtn);
-        newRemoveBtn.addEventListener('click', () => {
-            removePieceFromInventory();
-        });
+        if (isReadOnly) {
+            removeBtn.style.display = 'none';
+        } else {
+            removeBtn.style.display = '';
+            const newRemoveBtn = removeBtn.cloneNode(true);
+            removeBtn.replaceWith(newRemoveBtn);
+            newRemoveBtn.addEventListener('click', () => {
+                removePieceFromInventory();
+            });
+        }
 
         // Bind close button
         const closeBtn = document.getElementById('piece-inv-close');
@@ -902,11 +1111,15 @@
     function closePieceInventory() {
         modalPieceInv.classList.remove('active');
         pieceInvTarget = null;
-        renderBoard(boardSetup);
-        renderStashSetup();
+        if (currentScreen === 'setup') {
+            renderBoard(boardSetup);
+            renderStashSetup();
+        } else {
+            renderBoard(boardGame);
+        }
     }
 
-    function renderPieceInventorySlots(piece) {
+    function renderPieceInventorySlots(piece, isReadOnly) {
         const slotsContainer = document.getElementById('piece-inv-slots');
         const slotEls = slotsContainer.querySelectorAll('.piece-inv-slot');
 
@@ -920,13 +1133,15 @@
                     <div class="slot-label">Слот ${i + 1}</div>
                     <div class="slot-item-icon">${item.icon || '📦'}</div>
                     <div class="slot-item-name">${item.name}</div>
-                    <button class="slot-unequip" title="Снять">✕</button>
+                    ${!isReadOnly ? '<button class="slot-unequip" title="Снять">✕</button>' : ''}
                 `;
-                const unequipBtn = slotEl.querySelector('.slot-unequip');
-                unequipBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    unequipItemFromSlot(i);
-                });
+                if (!isReadOnly) {
+                    const unequipBtn = slotEl.querySelector('.slot-unequip');
+                    unequipBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        unequipItemFromSlot(i);
+                    });
+                }
             } else {
                 slotEl.innerHTML = `
                     <div class="slot-label">Слот ${i + 1}</div>
@@ -936,7 +1151,14 @@
         });
     }
 
-    function renderPieceInventoryStash(piece) {
+    function renderPieceInventoryStash(piece, isReadOnly) {
+        const stashSection = document.getElementById('piece-inv-stash-section');
+        if (isReadOnly) {
+            if (stashSection) stashSection.style.display = 'none';
+            return;
+        }
+        if (stashSection) stashSection.style.display = '';
+
         const listEl = document.getElementById('piece-inv-stash-list');
         const emptyMsg = document.getElementById('piece-inv-stash-empty');
         listEl.innerHTML = '';
@@ -1109,6 +1331,14 @@
 
         if (result.captured) {
             capturedPieces.white.push(result.captured);
+
+            // Loot enemy items in roguelike mode
+            if (isRoguelikeMode && result.captured.color === 'black' && result.captured instanceof PieceEntity) {
+                result.captured.getItems().forEach(item => {
+                    if (item) runManager.lootItem(item);
+                });
+                renderIngameStash(); // Update stash UI immediately
+            }
         }
 
         // Pick up gold earned by items (computed in engine.executeMoveAndUpdate)
@@ -1304,13 +1534,34 @@
             // Capture values BEFORE onRoundWin() increments currentRound
             const goldBonus = runManager.computeGoldOnWin(engine);
             const roundGold = runManager.getCurrentEncounter()?.goldReward || 0;
+
+            // Return all equipped items from player pieces back to stash
+            runManager.collectItemsFromBoard(engine);
+
+            // Recruit surviving enemy pieces
+            let recruitedCount = 0;
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = engine.board[r][c];
+                    if (p && p.color === 'black' && p.type !== 'king') {
+                        runManager.recruitPiece(p.type);
+                        recruitedCount++;
+                    }
+                }
+            }
+
             runManager.onRoundWin();
             runManager.gold += goldBonus;
 
+            // Reset currentShopItems so next shop visit has fresh items
+            currentShopItems = [];
+
+            const recruitText = recruitedCount > 0 ? `\nВы захватили ${recruitedCount} фигур врага!` : '';
+
             if (runManager.state === 'victory') {
-                showGameOverModal('🏆 Победа в забеге!', `Вы одолели всех врагов! Золото: ${runManager.gold} 🪙`, false);
+                showGameOverModal('🏆 Победа в забеге!', `Вы одолели всех врагов! Золото: ${runManager.gold} 🪙${recruitText}`, false);
             } else {
-                showGameOverModal('⚔️ Победа в раунде!', `+${roundGold} 🪙 за победу. Идём к торговцу...`, true);
+                showGameOverModal('⚔️ Победа в раунде!', `+${roundGold} 🪙 за победу.${recruitText}\nИдём к торговцу...`, true);
             }
         } else if (isRoguelikeMode && engine.gameResult === 'black') {
             runManager.onRoundLose();

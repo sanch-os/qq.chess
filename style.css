@@ -96,9 +96,9 @@ body {
    ============================================ */
 .screen {
     display: none;
-
     min-height: 100vh;
     animation: fadeIn 0.4s ease;
+    overflow-x: hidden;
 }
 
 .screen.active {
@@ -109,6 +109,7 @@ body {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
 
 /* ============================================
    Glass Panel
@@ -314,7 +315,8 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
+    margin-top: 8px;
 }
 
 .difficulty-selector label {
@@ -331,19 +333,23 @@ body {
     border-radius: var(--radius-md);
     padding: 4px;
     border: 1px solid var(--glass-border);
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 420px;
 }
 
 .diff-btn {
     font-family: var(--font-main);
-    font-size: 0.85rem;
+    font-size: 0.78rem;
     font-weight: 500;
-    padding: 8px 20px;
+    padding: 7px 12px;
     border: none;
     border-radius: 8px;
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
     transition: all var(--transition-normal);
+    white-space: nowrap;
 }
 
 .diff-btn.active {
@@ -355,6 +361,31 @@ body {
 .diff-btn:hover:not(.active) {
     color: var(--text-primary);
     background: var(--surface-hover);
+}
+
+/* Crazy difficulty — special red/orange highlight */
+.diff-btn-crazy {
+    color: #ff9944;
+}
+.diff-btn-crazy.active {
+    background: linear-gradient(135deg, #ff5520, #ff9944);
+    color: white;
+    box-shadow: 0 2px 14px rgba(255, 80, 20, 0.5);
+}
+.diff-btn-crazy:hover:not(.active) {
+    color: #ffb060;
+    background: rgba(255, 85, 32, 0.12);
+}
+
+/* Description text below difficulty */
+.diff-description {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    text-align: center;
+    max-width: 340px;
+    margin: 0;
+    min-height: 1.2em;
+    transition: color 0.2s;
 }
 
 /* ============================================
@@ -401,8 +432,8 @@ body {
 }
 
 .inventory-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 12px;
     flex-shrink: 0;
@@ -410,6 +441,7 @@ body {
 
 .inventory-item {
     aspect-ratio: 1;
+    width: calc(33.333% - 6px); /* 3 columns with 8px gap => ~ (100% - 16px)/3 */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1059,12 +1091,12 @@ body {
 }
 
 .stash-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
     gap: 6px;
     overflow-y: auto;
     padding-right: 2px;
-    /* Scrollable window — высота подстраивается под контент, но не больше */
     max-height: 280px;
     scrollbar-width: thin;
     scrollbar-color: var(--text-muted) transparent;
@@ -1125,7 +1157,7 @@ body {
     background: var(--surface);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-sm);
-    padding: 6px 4px;
+    padding: 10px 4px;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -1135,9 +1167,9 @@ body {
     position: relative;
     user-select: none;
     text-align: center;
-    aspect-ratio: 1;
+    width: calc(25% - 5px);
     min-width: 0;
-    overflow: hidden;
+    min-height: 0;
 }
 
 .shop-item:hover, .stash-item:hover {
@@ -1465,10 +1497,268 @@ body {
     padding: 14px 0;
 }
 
-/* --- Actions --- */
 .piece-inv-actions {
     display: flex;
     justify-content: flex-end;
     padding-top: 14px;
     border-top: 1px solid var(--glass-border);
 }
+
+/* ============================================
+   RESPONSIVE / MOBILE STYLES
+   ============================================ */
+
+/* Tablets and small desktops */
+@media (max-width: 900px) {
+    :root {
+        --board-size: min(460px, 88vmin);
+    }
+
+    .game-layout {
+        gap: 12px;
+    }
+
+    .info-panel {
+        width: 180px;
+        padding: 14px;
+    }
+
+    .history-panel {
+        width: 160px;
+        padding: 14px;
+    }
+
+    .setup-layout {
+        gap: 12px;
+    }
+
+    .inventory-panel {
+        width: 200px;
+        padding: 14px;
+    }
+}
+
+/* Mobile: stack everything vertically */
+@media (max-width: 680px) {
+    :root {
+        --board-size: min(96vw, 96vmin);
+    }
+
+    /* ---- SETUP SCREEN ---- */
+    #screen-setup {
+        padding: 10px 8px;
+        overflow-y: auto;
+        align-items: flex-start;
+        justify-content: flex-start;
+    }
+
+    .setup-layout {
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        max-width: 100%;
+    }
+
+    .inventory-panel {
+        width: 100%;
+        max-width: 96vw;
+        max-height: 220px;
+        padding: 12px;
+        order: 2;
+    }
+
+    .inventory-item {
+        font-size: 2rem;
+        width: calc(16.666% - 7px);
+    }
+
+    .board-area {
+        order: 1;
+        width: 100%;
+    }
+
+    /* Hide board labels on mobile to save space */
+    .board-labels-left,
+    .board-labels-right,
+    .board-labels-top,
+    .board-labels-bottom {
+        display: none;
+    }
+
+    /* ---- GAME SCREEN ---- */
+    #screen-game {
+        padding: 8px 4px;
+        overflow-y: auto;
+        align-items: flex-start;
+        justify-content: flex-start;
+    }
+
+    .game-layout {
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        max-width: 100%;
+    }
+
+    /* Show board first, then info, then history collapsed */
+    .board-area {
+        order: 1;
+        width: 100%;
+    }
+
+    .info-panel {
+        order: 2;
+        width: 100%;
+        max-width: 96vw;
+        flex-direction: row;
+        flex-wrap: wrap;
+        padding: 10px 12px;
+        gap: 8px;
+    }
+
+    .player-card {
+        flex: 1;
+        min-width: 140px;
+    }
+
+    .game-status {
+        width: 100%;
+        order: -1;
+    }
+
+    .game-actions {
+        flex-direction: row;
+        flex-wrap: wrap;
+        margin-top: 0;
+        width: 100%;
+    }
+
+    .game-actions .btn {
+        flex: 1;
+        min-width: 100px;
+        font-size: 0.78rem;
+        padding: 8px 10px;
+    }
+
+    /* Run info row (gold, round) */
+    #run-gold, #run-round {
+        font-size: 0.82rem;
+    }
+
+    /* History panel: collapse to horizontal scrollable row */
+    .history-panel {
+        order: 3;
+        width: 100%;
+        max-width: 96vw;
+        max-height: 120px;
+        padding: 8px 12px;
+    }
+
+    .move-history {
+        max-height: 80px;
+    }
+
+    /* Ingame stash - horizontal scroll */
+    #ingame-stash-section {
+        order: 4;
+        width: 100%;
+    }
+
+    #ingame-stash {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        gap: 6px;
+        padding-bottom: 4px;
+        scrollbar-width: thin;
+    }
+
+    #ingame-stash .stash-item {
+        flex-shrink: 0;
+        width: 50px;
+        height: 50px;
+    }
+
+    /* ---- SHOP SCREEN ---- */
+    #screen-shop {
+        padding: 10px 8px;
+        overflow-y: auto;
+        align-items: flex-start;
+    }
+
+    .shop-layout {
+        flex-direction: column;
+        max-width: 100%;
+        gap: 12px;
+    }
+
+    .shop-main {
+        width: 100%;
+        max-width: 96vw;
+    }
+
+    .shop-sidebar {
+        width: 100%;
+        max-width: 96vw;
+    }
+
+    .shop-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    /* ---- MENU SCREEN ---- */
+    .menu-title {
+        font-size: clamp(2rem, 10vw, 3.5rem);
+        gap: 8px;
+    }
+
+    .menu-buttons {
+        gap: 10px;
+    }
+
+    .btn-large {
+        font-size: 0.95rem;
+        padding: 14px 24px;
+        width: 90vw;
+        max-width: 320px;
+    }
+
+    /* ---- PIECE INVENTORY MODAL ---- */
+    #modal-piece-inv .modal {
+        max-width: 98vw;
+        width: 98vw;
+        padding: 16px 12px;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    .piece-inv-stash-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    /* ---- GAMEOVER MODAL ---- */
+    .modal {
+        max-width: 96vw;
+        padding: 28px 16px;
+    }
+}
+
+/* Very small phones */
+@media (max-width: 380px) {
+    :root {
+        --board-size: 98vw;
+    }
+
+    .inventory-item {
+        font-size: 1.7rem;
+        width: calc(25% - 6px);
+    }
+
+    .shop-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+

@@ -5,6 +5,7 @@
 class ChessAI {
     constructor(depth = 3) {
         this.maxDepth = depth;
+        this.mode = 'normal'; // very_easy | easy | normal | hard | crazy
         this.nodesEvaluated = 0;
 
         // Piece values
@@ -96,6 +97,21 @@ class ChessAI {
         this.maxDepth = depth;
     }
 
+    setMode(mode) {
+        this.mode = mode;
+        // Adjust depth automatically based on mode
+        const depthMap = {
+            very_easy: 1,
+            easy:      2,
+            normal:    3,
+            hard:      4,
+            crazy:     1, // depth doesn't matter for crazy
+        };
+        if (depthMap[mode] !== undefined) {
+            this.maxDepth = depthMap[mode];
+        }
+    }
+
     /* --- Best Move --- */
 
     getBestMove(engine) {
@@ -105,6 +121,19 @@ class ChessAI {
 
         if (legalMoves.length === 0) return null;
         if (legalMoves.length === 1) return legalMoves[0];
+
+        // ── CRAZY MODE: pick the worst possible move (play to lose) ──────────
+        if (this.mode === 'crazy') {
+            return this._getCrazyMove(engine, legalMoves);
+        }
+
+        // ── VERY EASY MODE: mostly random, with small chance of smart move ──
+        if (this.mode === 'very_easy') {
+            // 70% chance of a completely random move
+            if (Math.random() < 0.7) {
+                return legalMoves[Math.floor(Math.random() * legalMoves.length)];
+            }
+        }
 
         // Order moves for better pruning
         const orderedMoves = this.orderMoves(engine, legalMoves);
@@ -131,6 +160,27 @@ class ChessAI {
         }
 
         return bestMove;
+    }
+
+    // Crazy mode: pick the move with the WORST evaluation score
+    _getCrazyMove(engine, legalMoves) {
+        let worstMove = legalMoves[0];
+        let worstScore = Infinity;
+
+        // Shuffle first so ties are broken randomly
+        const shuffled = [...legalMoves].sort(() => Math.random() - 0.5);
+
+        for (const move of shuffled) {
+            const clone = engine.clone();
+            clone.executeMove(move, false);
+            clone.currentTurn = clone.currentTurn === 'white' ? 'black' : 'white';
+            const score = this.evaluate(clone, clone.currentTurn);
+            if (score < worstScore) {
+                worstScore = score;
+                worstMove = move;
+            }
+        }
+        return worstMove;
     }
 
     /* --- Minimax with Alpha-Beta --- */
