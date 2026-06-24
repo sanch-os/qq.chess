@@ -24,6 +24,35 @@
     let draggedItem = null; // { itemIndex: number }
     let dragGhost = null;
 
+    // --- Localization ---
+    function applyLocalization() {
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            const translation = window.t(key);
+            if (translation) {
+                el.innerHTML = translation;
+            }
+        });
+    }
+
+    function changeLanguage(lang) {
+        localStorage.setItem('chess_lang', lang);
+        document.querySelectorAll('.lang-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.lang === lang);
+        });
+        applyLocalization();
+        if (currentScreen === 'setup') {
+            renderInventory();
+            renderStashSetup();
+        }
+        if (currentScreen === 'shop') openShop();
+        if (currentScreen === 'game') {
+            updateGameStatus();
+            renderMoveHistory();
+            renderIngameStash();
+        }
+    }
+
     // Generated shop items for current shop visit
     let currentShopItems = [];
     let selectedDifficulty = 'normal'; // very_easy | easy | normal | hard | crazy
@@ -70,6 +99,9 @@
 
     // --- Initialize ---
     function init() {
+        const savedLang = localStorage.getItem('chess_lang') || 'ru';
+        changeLanguage(savedLang);
+
         buildBoard(boardSetup, 'setup');
         buildBoard(boardGame, 'game');
         bindEvents();
@@ -302,10 +334,12 @@
         // runManager.playerItems is the stash (items not yet equipped)
         runManager.playerItems.forEach((item, idx) => {
             if (!item) return;
+            const tName = window.t_item(item, 'name');
+            const tDesc = window.t_item(item, 'description');
             const el = document.createElement('div');
             el.className = `stash-item rarity-${item.rarity || 'common'}`;
             el.innerHTML = `<div class="item-icon">${item.icon || '📦'}</div>
-                            <div class="item-tooltip"><strong>${item.name}</strong><br>${item.description}</div>`;
+                            <div class="item-tooltip"><strong>${tName}</strong><br>${tDesc}</div>`;
             el.setAttribute('draggable', 'true');
             el.dataset.itemIndex = idx;
             el.addEventListener('dragstart', onStashDragStart);
@@ -328,11 +362,13 @@
         if (section) section.style.display = '';
         container.innerHTML = '';
         items.forEach((item, idx) => {
+            const tName = window.t_item(item, 'name');
+            const tDesc = window.t_item(item, 'description');
             const el = document.createElement('div');
             el.className = `stash-item rarity-${item.rarity || 'common'}`;
-            el.title = `${item.name}\n${item.description}`;
+            el.title = `${tName}\n${tDesc}`;
             el.innerHTML = `<div class="item-icon">${item.icon || '📦'}</div>
-                            <div class="item-tooltip"><strong>${item.name}</strong><br>${item.description}</div>`;
+                            <div class="item-tooltip"><strong>${tName}</strong><br>${tDesc}</div>`;
             container.appendChild(el);
         });
     }
@@ -550,11 +586,13 @@
             const el = document.createElement('div');
             el.className = `shop-item rarity-${item.rarity || 'common'}`;
             el.dataset.shopIndex = index;
+            const tName = window.t_item(item, 'name');
+            const tDesc = window.t_item(item, 'description');
             el.innerHTML = `
                 <div class="item-icon">${item.icon || '📦'}</div>
-                <div class="item-name">${item.name}</div>
+                <div class="item-name">${tName}</div>
                 <div class="item-cost">${item.cost} 🪙</div>
-                <div class="item-tooltip">${item.description}</div>
+                <div class="item-tooltip">${tDesc}</div>
             `;
             el.addEventListener('click', () => {
                 if (runManager.gold < item.cost) {
@@ -565,7 +603,7 @@
                 const result = runManager.buyItem(item);
                 if (result === 'full') {
                     el.style.border = '2px solid #ff5555';
-                    el.title = 'Сундук заполнен (99/99)!';
+                    el.title = window.t('shop.msg.full');
                     setTimeout(() => { el.style.border = ''; el.title = ''; }, 1500);
                     return;
                 }
@@ -583,12 +621,15 @@
             const el = document.createElement('div');
             el.className = `stash-item rarity-${item.rarity || 'common'}`;
             const sellPrice = Math.floor(item.cost / 2);
+            const tName = window.t_item(item, 'name');
+            const tDesc = window.t_item(item, 'description');
             el.innerHTML = `
                 <div class="item-icon">${item.icon || '📦'}</div>
-                <div class="item-tooltip">Продать за ${sellPrice} 🪙<br>${item.description}</div>
+                <div class="item-tooltip">${window.t('shop.msg.sell_for').replace('{price}', sellPrice)}<br>${tDesc}</div>
             `;
             el.addEventListener('click', () => {
-                if (confirm(`Продать ${item.name} за ${sellPrice} 🪙?`)) {
+                const msg = window.t('shop.msg.sell_confirm').replace('{name}', tName).replace('{price}', sellPrice);
+                if (confirm(msg)) {
                     runManager.sellItem(index);
                     refreshShop();
                 }
@@ -610,11 +651,13 @@
             const el = document.createElement('div');
             el.className = `shop-item rarity-${item.rarity || 'common'}`;
             el.dataset.shopIndex = index;
+            const tName = window.t_item(item, 'name');
+            const tDesc = window.t_item(item, 'description');
             el.innerHTML = `
                 <div class="item-icon">${item.icon || '📦'}</div>
-                <div class="item-name">${item.name}</div>
+                <div class="item-name">${tName}</div>
                 <div class="item-cost">${item.cost} 🪙</div>
-                <div class="item-tooltip">${item.description}</div>
+                <div class="item-tooltip">${tDesc}</div>
             `;
             el.addEventListener('click', () => {
                 if (runManager.gold < item.cost) {
@@ -637,12 +680,15 @@
             const el = document.createElement('div');
             el.className = `stash-item rarity-${item.rarity || 'common'}`;
             const sellPrice = Math.floor(item.cost / 2);
+            const tName = window.t_item(item, 'name');
+            const tDesc = window.t_item(item, 'description');
             el.innerHTML = `
                 <div class="item-icon">${item.icon || '📦'}</div>
-                <div class="item-tooltip">Продать за ${sellPrice} 🪙<br>${item.description}</div>
+                <div class="item-tooltip">${window.t('shop.msg.sell_for').replace('{price}', sellPrice)}<br>${tDesc}</div>
             `;
             el.addEventListener('click', () => {
-                if (confirm(`Продать ${item.name} за ${sellPrice} 🪙?`)) {
+                const msg = window.t('shop.msg.sell_confirm').replace('{name}', tName).replace('{price}', sellPrice);
+                if (confirm(msg)) {
                     runManager.sellItem(index);
                     refreshShop();
                 }
@@ -670,6 +716,12 @@
 
     // --- Event Bindings ---
     function bindEvents() {
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                changeLanguage(e.target.dataset.lang);
+            });
+        });
+
         document.getElementById('btn-new-run').addEventListener('click', () => {
             isRoguelikeMode = true;
             runManager.startRun();
@@ -718,13 +770,6 @@
             startCreativeMode(true);
         });
 
-        const DIFF_DESCRIPTIONS = {
-            very_easy: '🐣 ИИ делает почти случайные ходы. Отличный старт для новичков!',
-            easy:      '🟢 ИИ думает поверхностно. Легко учиться.',
-            normal:    '🔵 Стандартный противник. Хорошо думает и неплохо играет.',
-            hard:      '🔴 ИИ просчитывает на 4 хода вперёд. Серьёзный вызов.',
-            crazy:     '🤪 ИИ специально делает ХУДШИЕ ходы. Играет в поддавки!',
-        };
 
         document.querySelectorAll('.diff-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -733,7 +778,7 @@
                 selectedDifficulty = btn.dataset.mode;
                 ai.setMode(selectedDifficulty);
                 const descEl = document.getElementById('diff-description');
-                if (descEl) descEl.textContent = DIFF_DESCRIPTIONS[selectedDifficulty] || '';
+                if (descEl) descEl.textContent = window.t('diff.desc.' + selectedDifficulty) || '';
             });
         });
 
@@ -895,13 +940,13 @@
 
         // Update panel title
         const panelTitle = document.querySelector('.inventory-panel .panel-title');
-        if (panelTitle) panelTitle.textContent = isPvP ? 'Белые — Ваша Армия' : 'Ваша Армия (Творческий)';
+        if (panelTitle) panelTitle.textContent = isPvP ? window.t('setup.army.white') : window.t('setup.army.creative');
 
         // Show black setup toggle in creative mode
         const btnSetupBlack = document.getElementById('btn-setup-black');
         if (btnSetupBlack) {
             btnSetupBlack.style.display = '';
-            btnSetupBlack.innerHTML = '🔄 Редактировать Черных';
+            btnSetupBlack.innerHTML = '🔄 ' + window.t('setup.btn.edit_black');
         }
 
         updateStartButton();
@@ -935,12 +980,12 @@
         });
 
         const panelTitle = document.querySelector('.inventory-panel .panel-title');
-        if (panelTitle) panelTitle.textContent = 'Чёрные — Ваша Армия';
+        if (panelTitle) panelTitle.textContent = window.t('setup.army.black');
 
         const btnSetupBlack = document.getElementById('btn-setup-black');
         if (btnSetupBlack) {
             btnSetupBlack.style.display = '';
-            btnSetupBlack.innerHTML = '🔄 Редактировать Белых';
+            btnSetupBlack.innerHTML = '🔄 ' + window.t('setup.btn.edit_white');
         }
 
         lastMove = null; // Clear any leftover highlights
@@ -1002,26 +1047,26 @@
             const roundNum = runManager.currentRound + 1;
             const totalRounds = runManager.encounters.length;
             if (encounter.isBoss) {
-                document.getElementById('run-round').textContent = `⚔️ БОСС ${roundNum}/${totalRounds}: ${encounter.bossName || encounter.name}`;
+                document.getElementById('run-round').textContent = `⚔️ ${window.t('run.boss')} ${roundNum}/${totalRounds}: ${window.t_item(encounter, 'bossName') || window.t_item(encounter, 'name')}`;
             } else {
-                document.getElementById('run-round').textContent = `Раунд ${roundNum}/${totalRounds}: ${encounter.name}`;
+                document.getElementById('run-round').textContent = `${window.t('run.round')} ${roundNum}/${totalRounds}: ${window.t_item(encounter, 'name')}`;
             }
             document.getElementById('btn-undo').style.display = 'none';
 
         } else if (isCreativeMode && isPvP) {
             // PvP: black already placed, don't setup standard
             document.getElementById('run-gold').textContent = '';
-            document.getElementById('run-round').textContent = 'Творческий PvP';
+            document.getElementById('run-round').textContent = window.t('run.creative_pvp');
             document.getElementById('btn-undo').style.display = 'none';
         } else if (isCreativeMode) {
             engine.setupBlackStandard();
             document.getElementById('run-gold').textContent = '';
-            document.getElementById('run-round').textContent = 'Творческий vs Бот';
+            document.getElementById('run-round').textContent = window.t('run.creative_bot');
             document.getElementById('btn-undo').style.display = 'block';
         } else {
             engine.setupBlackStandard();
             document.getElementById('run-gold').textContent = '';
-            document.getElementById('run-round').textContent = 'Классика';
+            document.getElementById('run-round').textContent = window.t('run.classic');
             document.getElementById('btn-undo').style.display = 'block';
         }
 
@@ -1067,8 +1112,12 @@
     // --- Piece Inventory Modal ---
 
     const PIECE_NAMES = {
-        king: 'Король', queen: 'Ферзь', rook: 'Ладья',
-        bishop: 'Слон', knight: 'Конь', pawn: 'Пешка'
+        king: window.t('piece.king') || 'Король', 
+        queen: window.t('piece.queen') || 'Ферзь', 
+        rook: window.t('piece.rook') || 'Ладья',
+        bishop: window.t('piece.bishop') || 'Слон', 
+        knight: window.t('piece.knight') || 'Конь', 
+        pawn: window.t('piece.pawn') || 'Пешка'
     };
 
     function openPieceInventory(row, col) {
@@ -1080,8 +1129,8 @@
 
         // Header
         document.getElementById('piece-inv-icon').textContent = PIECE_SYMBOLS[piece.color]?.[piece.type] || '♟';
-        document.getElementById('piece-inv-title').textContent = PIECE_NAMES[piece.type] || piece.type;
-        document.getElementById('piece-inv-subtitle').textContent = isReadOnly ? 'Экипированные предметы' : `Слоты экипировки (${piece.getItems().length}/3)`;
+        document.getElementById('piece-inv-title').textContent = window.t('piece.' + piece.type) || piece.type;
+        document.getElementById('piece-inv-subtitle').textContent = isReadOnly ? window.t('piece.inv.subtitle.equipped') : window.t('piece.inv.subtitle.slots').replace('{count}', piece.getItems().length);
 
         renderPieceInventorySlots(piece, isReadOnly);
         renderPieceInventoryStash(piece, isReadOnly);
@@ -1130,9 +1179,9 @@
             if (item) {
                 slotEl.classList.add('filled', `rarity-${item.rarity || 'common'}`);
                 slotEl.innerHTML = `
-                    <div class="slot-label">Слот ${i + 1}</div>
+                    <div class="slot-label">${window.t('piece.inv.slot')} ${i + 1}</div>
                     <div class="slot-item-icon">${item.icon || '📦'}</div>
-                    <div class="slot-item-name">${item.name}</div>
+                    <div class="slot-item-name">${window.t_item(item, 'name')}</div>
                     ${!isReadOnly ? '<button class="slot-unequip" title="Снять">✕</button>' : ''}
                 `;
                 if (!isReadOnly) {
@@ -1144,8 +1193,8 @@
                 }
             } else {
                 slotEl.innerHTML = `
-                    <div class="slot-label">Слот ${i + 1}</div>
-                    <div class="slot-content empty">Пусто</div>
+                    <div class="slot-label">${window.t('piece.inv.slot')} ${i + 1}</div>
+                    <div class="slot-content empty">${window.t('piece.inv.empty_slot')}</div>
                 `;
             }
         });
@@ -1183,14 +1232,17 @@
             const el = document.createElement('div');
             el.className = `piece-inv-stash-item rarity-${item.rarity || 'common'}`;
             if (!canEquip) el.classList.add('disabled');
-            el.title = canEquip ? `Экипировать: ${item.description}` :
-                       !isAllowed ? `Не подходит для ${PIECE_NAMES[piece.type]}` :
-                       'Все слоты заняты';
+            el.title = canEquip ? window.t('piece.inv.equip') + `: ${window.t_item(item, 'description')}` :
+                       !isAllowed ? window.t('piece.inv.not_allowed') + ` ${window.t('piece.' + piece.type)}` :
+                       window.t('piece.inv.no_slots');
 
+            const tName = window.t_item(item, 'name');
+            const tDesc = window.t_item(item, 'description');
+            
             el.innerHTML = `
                 <div class="stash-item-icon-wrap">${item.icon || '📦'}</div>
-                <div class="stash-item-info" style="font-size:0.7em; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; padding:0 2px;">${item.name}</div>
-                <div class="item-tooltip"><strong>${item.name}</strong><br>${item.description}<br><em style="color:#9d93fa;">${canEquip ? 'Кликните для экипировки' : (!isAllowed ? 'Не подходит' : 'Нет слотов')}</em></div>
+                <div class="stash-item-info" style="font-size:0.7em; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; padding:0 2px;">${tName}</div>
+                <div class="item-tooltip"><strong>${tName}</strong><br>${tDesc}<br><em style="color:#9d93fa;">${canEquip ? window.t('piece.inv.click_equip') : (!isAllowed ? window.t('piece.inv.not_allowed') : window.t('piece.inv.no_slots'))}</em></div>
             `;
 
             if (canEquip) {
@@ -1219,7 +1271,7 @@
         runManager.playerItems.splice(stashIndex, 1);
 
         // Re-render
-        document.getElementById('piece-inv-subtitle').textContent = `Слоты экипировки (${piece.getItems().length}/3)`;
+        document.getElementById('piece-inv-subtitle').textContent = window.t('piece.inv.subtitle.slots').replace('{count}', piece.getItems().length);
         renderPieceInventorySlots(piece);
         renderPieceInventoryStash(piece);
     }
@@ -1234,7 +1286,7 @@
             runManager.playerItems.push(item);
         }
 
-        document.getElementById('piece-inv-subtitle').textContent = `Слоты экипировки (${piece.getItems().length}/3)`;
+        document.getElementById('piece-inv-subtitle').textContent = window.t('piece.inv.subtitle.slots').replace('{count}', piece.getItems().length);
         renderPieceInventorySlots(piece);
         renderPieceInventoryStash(piece);
     }
@@ -1494,28 +1546,17 @@
 
         if (engine.gameOver) {
             gameStatusEl.classList.add('gameover');
-            if (engine.gameResult === 'draw') statusText.textContent = 'Ничья!';
-            else if (isPvP) {
-                statusText.textContent = engine.gameResult === 'white' ? 'Победа Белых!' : 'Победа Чёрных!';
-            }
-            else if (engine.gameResult === 'white') statusText.textContent = 'Победа!';
-            else statusText.textContent = 'Поражение';
+            if (engine.gameResult === 'draw') statusText.textContent = window.t('game.status.draw');
+            else if (engine.gameResult === 'white') statusText.textContent = window.t('game.status.white_win');
+            else statusText.textContent = window.t('game.status.black_win');
         } else if (isAIThinking) {
             gameStatusEl.classList.add('thinking');
-            statusText.textContent = 'ИИ думает...';
+            statusText.textContent = window.t('game.status.thinking');
         } else if (engine.isInCheck(engine.currentTurn)) {
             gameStatusEl.classList.add('check');
-            if (isPvP) {
-                statusText.textContent = engine.currentTurn === 'white' ? 'Шах! Ход Белых' : 'Шах! Ход Чёрных';
-            } else {
-                statusText.textContent = engine.currentTurn === 'white' ? 'Шах! Ваш ход' : 'Шах!';
-            }
+            statusText.textContent = engine.currentTurn === 'white' ? window.t('game.status.white_check') : window.t('game.status.black_check');
         } else {
-            if (isPvP) {
-                statusText.textContent = engine.currentTurn === 'white' ? 'Ход Белых' : 'Ход Чёрных';
-            } else {
-                statusText.textContent = engine.currentTurn === 'white' ? 'Ваш ход' : 'Ход компьютера';
-            }
+            statusText.textContent = engine.currentTurn === 'white' ? window.t('game.status.white_turn') : window.t('game.status.black_turn');
         }
 
         document.querySelector('.player-card.player')?.classList.toggle('active-turn', engine.currentTurn === 'white' && !engine.gameOver);
@@ -1556,16 +1597,18 @@
             // Reset currentShopItems so next shop visit has fresh items
             currentShopItems = [];
 
-            const recruitText = recruitedCount > 0 ? `\nВы захватили ${recruitedCount} фигур врага!` : '';
+            const recruitText = recruitedCount > 0 ? `\n` + window.t('gameover.recruit').replace('{count}', recruitedCount) : '';
 
             if (runManager.state === 'victory') {
-                showGameOverModal('🏆 Победа в забеге!', `Вы одолели всех врагов! Золото: ${runManager.gold} 🪙${recruitText}`, false);
+                const text = window.t('gameover.run.win.text').replace('{gold}', runManager.gold) + recruitText;
+                showGameOverModal('🏆 ' + window.t('gameover.run.win.title'), text, false);
             } else {
-                showGameOverModal('⚔️ Победа в раунде!', `+${roundGold} 🪙 за победу.${recruitText}\nИдём к торговцу...`, true);
+                const text = `+${roundGold} 🪙 ` + window.t('gameover.round.win.text') + recruitText;
+                showGameOverModal('⚔️ ' + window.t('gameover.round.win.title'), text, true);
             }
         } else if (isRoguelikeMode && engine.gameResult === 'black') {
             runManager.onRoundLose();
-            showGameOverModal('💀 Поражение', 'Ваша армия разгромлена. Забег окончен.', false);
+            showGameOverModal('💀 ' + window.t('gameover.title.lose'), window.t('gameover.run.lose'), false);
         } else {
             showGameOverModalDefault();
         }
@@ -1580,7 +1623,7 @@
         icon.textContent = isShopTransition ? '🪙' : (engine.gameResult === 'white' ? '🏆' : '💀');
         titleEl.textContent = title;
         textEl.textContent = text;
-        btnPlayAgain.textContent = isShopTransition ? '🛒 В магазин' : '🏠 В меню';
+        btnPlayAgain.textContent = isShopTransition ? window.t('gameover.btn.shop') : window.t('gameover.btn.menu');
 
         // Replace button to clear old listeners
         const newBtn = btnPlayAgain.cloneNode(true);
@@ -1603,15 +1646,15 @@
         const text = document.getElementById('gameover-text');
 
         if (engine.gameResult === 'white') {
-            icon.textContent = '🏆'; title.textContent = 'Победа!';
-            text.textContent = 'Шах и мат! Вы обыграли компьютер!';
+            icon.textContent = '🏆'; title.textContent = window.t('gameover.title.win');
+            text.textContent = window.t('gameover.text.win');
         } else if (engine.gameResult === 'black') {
-            icon.textContent = '😔'; title.textContent = 'Поражение';
-            text.textContent = 'Шах и мат. Компьютер победил.';
+            icon.textContent = '😔'; title.textContent = window.t('gameover.title.lose');
+            text.textContent = window.t('gameover.text.lose');
         } else {
-            icon.textContent = '🤝'; title.textContent = 'Ничья';
-            text.textContent = engine.gameResultReason === 'stalemate' ? 'Пат!' :
-                engine.gameResultReason === '50-move rule' ? 'Правило 50 ходов' : 'Недостаточно материала';
+            icon.textContent = '🤝'; title.textContent = window.t('gameover.title.draw');
+            text.textContent = engine.gameResultReason === 'stalemate' ? window.t('gameover.text.stalemate') :
+                engine.gameResultReason === '50-move rule' ? window.t('gameover.text.50move') : window.t('gameover.text.material');
         }
 
         setTimeout(() => modalGameover.classList.add('active'), 500);

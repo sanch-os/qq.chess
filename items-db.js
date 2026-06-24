@@ -10,8 +10,8 @@ const ITEMS_DB = {
 
     boots_of_speed: {
         id: 'boots_of_speed',
-        name: 'Сапоги скорости',
-        description: 'Скользящие фигуры (ладья, слон, ферзь) получают +1 к дальности хода.',
+        name: { ru: 'Сапоги Скорости', en: "Boots of Speed", es: "Botas de Velocidad" },
+        description: { ru: '+1 к дальности хода (по прямой или диагонали).', en: "+1 Range to horizontal/vertical/diagonal moves.", es: "+1 Rango a movimientos horizontales/verticales/diagonales." },
         icon: '👢',
         rarity: 'common',
         category: 'movement',
@@ -25,8 +25,8 @@ const ITEMS_DB = {
 
     compass: {
         id: 'compass',
-        name: 'Компас',
-        description: 'Слон может дополнительно ходить на 1 клетку по прямой.',
+        name: { ru: "Компас", en: "Compass", es: "Brújula" },
+        description: { ru: "Слон может дополнительно ходить на 1 клетку по прямой.", en: "The Bishop can additionally move 1 square in a straight line.", es: "El Alfil puede moverse adicionalmente 1 casilla en línea recta." },
         icon: '🧭',
         rarity: 'common',
         category: 'movement',
@@ -40,8 +40,8 @@ const ITEMS_DB = {
 
     diagonal_slide: {
         id: 'diagonal_slide',
-        name: 'Диагональное скольжение',
-        description: 'Ладья может дополнительно ходить на 1 клетку по диагонали.',
+        name: { ru: "Диагональное скольжение", en: "Diagonal Slide", es: "Deslizamiento Diagonal" },
+        description: { ru: "Ладья может дополнительно ходить на 1 клетку по диагонали.", en: "The Rook can additionally move 1 square diagonally.", es: "La Torre puede moverse adicionalmente 1 casilla en diagonal." },
         icon: '💠',
         rarity: 'common',
         category: 'movement',
@@ -55,8 +55,8 @@ const ITEMS_DB = {
 
     retreat: {
         id: 'retreat',
-        name: 'Отступление',
-        description: 'Пешка может ходить на 1 клетку назад.',
+        name: { ru: "Отступление", en: "Retreat", es: "Retirada" },
+        description: { ru: "Пешка может ходить на 1 клетку назад.", en: "The Pawn can move 1 square backwards.", es: "El Peón puede moverse 1 casilla hacia atrás." },
         icon: '🔙',
         rarity: 'common',
         category: 'movement',
@@ -70,8 +70,8 @@ const ITEMS_DB = {
 
     horseshoe: {
         id: 'horseshoe',
-        name: 'Подкова',
-        description: 'Конь получает дополнительные прыжки: 3×1 (длинный Г).',
+        name: { ru: "Подкова", en: "Horseshoe", es: "Herradura" },
+        description: { ru: "Конь получает дополнительные прыжки: 3×1 (длинный Г).", en: "The Knight gains additional jumps: 3x1 (long L-shape).", es: "El Caballo obtiene saltos adicionales: 3x1 (forma de L larga)." },
         icon: '🐴',
         rarity: 'rare',
         category: 'movement',
@@ -89,8 +89,8 @@ const ITEMS_DB = {
 
     sharp_blade: {
         id: 'sharp_blade',
-        name: 'Острый клинок',
-        description: 'Скользящие фигуры получают +1 к дальности взятия.',
+        name: { ru: "Острый клинок", en: "Sharp Blade", es: "Cuchilla Afilada" },
+        description: { ru: "Скользящие фигуры получают +1 к дальности взятия.", en: "Sliding pieces gain +1 to capture range.", es: "Las piezas deslizantes obtienen +1 al rango de captura." },
         icon: '⚔️',
         rarity: 'common',
         category: 'offense',
@@ -104,8 +104,8 @@ const ITEMS_DB = {
 
     sniper_scope: {
         id: 'sniper_scope',
-        name: 'Снайперский прицел',
-        description: 'Пешка может брать фигуры на расстоянии 2 клеток по диагонали.',
+        name: { ru: "Снайперский прицел", en: "Sniper Scope", es: "Mira de Francotirador" },
+        description: { ru: "Пешка может брать фигуры на расстоянии 2 клеток по диагонали.", en: "The Pawn can capture pieces at a distance of 2 squares diagonally.", es: "El Peón puede capturar piezas a una distancia de 2 casillas en diagonal." },
         icon: '🔭',
         rarity: 'rare',
         category: 'offense',
@@ -119,8 +119,8 @@ const ITEMS_DB = {
 
     gold_tooth: {
         id: 'gold_tooth',
-        name: 'Золотой зуб',
-        description: '+15 золота за каждое взятие этой фигурой.',
+        name: { ru: "Золотой зуб", en: "Gold Tooth", es: "Diente de Oro" },
+        description: { ru: "+15 золота за каждое взятие этой фигурой.", en: "+15 gold for each capture by this piece.", es: "+15 de oro por cada captura de esta pieza." },
         icon: '🦷',
         rarity: 'common',
         category: 'offense',
@@ -134,8 +134,8 @@ const ITEMS_DB = {
 
     treasure_map: {
         id: 'treasure_map',
-        name: 'Карта сокровищ',
-        description: '+50 золота за победу в раунде.',
+        name: { ru: "Карта сокровищ", en: "Treasure Map", es: "Mapa del Tesoro" },
+        description: { ru: "+150 золота за победу в раунде.", en: "+150 gold for winning the round.", es: "+150 de oro por ganar la ronda." },
         icon: '🗺️',
         rarity: 'common',
         category: 'utility',
@@ -149,8 +149,8 @@ const ITEMS_DB = {
 
     promotion_scroll: {
         id: 'promotion_scroll',
-        name: 'Свиток превращения',
-        description: 'Пешка может превратиться уже на 6-м ряду (вместо 8-го).',
+        name: { ru: "Свиток превращения", en: "Promotion Scroll", es: "Pergamino de Coronación" },
+        description: { ru: "Пешка может превратиться уже на 6-м ряду (вместо 8-го).", en: "The Pawn can promote on the 6th rank (instead of the 8th).", es: "El Peón puede coronar en la 6ª fila (en lugar de la 8ª)." },
         icon: '📜',
         rarity: 'rare',
         category: 'offense',
@@ -168,8 +168,8 @@ const ITEMS_DB = {
 
     wooden_shield: {
         id: 'wooden_shield',
-        name: 'Деревянный щит',
-        description: 'Фигура выживает после первого взятия (одноразовый щит).',
+        name: { ru: "Деревянный щит", en: "Wooden Shield", es: "Escudo de Madera" },
+        description: { ru: "Фигура выживает после первого взятия (одноразовый щит).", en: "The piece survives its first capture (one-time shield).", es: "La pieza sobrevive a su primera captura (escudo de un solo uso)." },
         icon: '🛡️',
         rarity: 'common',
         category: 'defense',
@@ -183,8 +183,8 @@ const ITEMS_DB = {
 
     iron_armor: {
         id: 'iron_armor',
-        name: 'Железная броня',
-        description: 'Фигура не может быть взята пешками.',
+        name: { ru: 'Железная Броня', en: "Iron Armor", es: "Armadura de Hierro" },
+        description: { ru: 'Фигура получает иммунитет к атакам пешек.', en: "Piece cannot be captured by Pawns.", es: "La pieza no puede ser capturada por Peones." },
         icon: '🪖',
         rarity: 'rare',
         category: 'defense',
@@ -198,8 +198,8 @@ const ITEMS_DB = {
 
     evasion_cloak: {
         id: 'evasion_cloak',
-        name: 'Плащ уклонения',
-        description: '20% шанс уклониться от взятия.',
+        name: { ru: "Плащ уклонения", en: "Cloak of Evasion", es: "Capa de Evasión" },
+        description: { ru: "20% шанс уклониться от взятия.", en: "20% chance to evade a capture.", es: "20% de probabilidad de evadir una captura." },
         icon: '🧥',
         rarity: 'rare',
         category: 'defense',
@@ -217,8 +217,8 @@ const ITEMS_DB = {
 
     kings_crown: {
         id: 'kings_crown',
-        name: 'Корона короля',
-        description: 'Король получает возможность ходить как ферзь!',
+        name: { ru: "Корона короля", en: "King's Crown", es: "Corona del Rey" },
+        description: { ru: "Король получает возможность ходить как ферзь!", en: "The King gains the ability to move like a Queen!", es: "¡El Rey obtiene la habilidad de moverse como una Reina!" },
         icon: '👑',
         rarity: 'epic',
         category: 'movement',
@@ -232,8 +232,8 @@ const ITEMS_DB = {
 
     wings: {
         id: 'wings',
-        name: 'Крылья',
-        description: 'Фигура может прыгать через другие фигуры (как конь).',
+        name: { ru: "Крылья", en: "Wings", es: "Alas" },
+        description: { ru: "Фигура может прыгать через другие фигуры (как конь).", en: "The piece can jump over other pieces (like a Knight).", es: "La pieza puede saltar sobre otras piezas (como un Caballo)." },
         icon: '🪽',
         rarity: 'epic',
         category: 'movement',
@@ -251,8 +251,8 @@ const ITEMS_DB = {
 
     magic_boots: {
         id: 'magic_boots',
-        name: 'Магические сапоги',
-        description: 'Фигура может ходить на 1 клетку в любом направлении (как король).',
+        name: { ru: "Магические сапоги", en: "Magic Boots", es: "Botas Mágicas" },
+        description: { ru: "Фигура может ходить на 1 клетку в любом направлении (как король).", en: "The piece can move 1 square in any direction (like a King).", es: "La pieza puede moverse 1 casilla en cualquier dirección (como un Rey)." },
         icon: '✨',
         rarity: 'rare',
         category: 'movement',
@@ -266,8 +266,8 @@ const ITEMS_DB = {
 
     shadow_step: {
         id: 'shadow_step',
-        name: 'Шаг тени',
-        description: 'Конь может переместиться на 2 клетки по прямой (как ладья на 2).',
+        name: { ru: "Шаг тени", en: "Shadow Step", es: "Paso de Sombra" },
+        description: { ru: "Конь может переместиться на 2 клетки по прямой (как ладья на 2).", en: "The Knight can move 2 squares in a straight line (like a Rook for 2 squares).", es: "El Caballo puede moverse 2 casillas en línea recta (como una Torre por 2 casillas)." },
         icon: '🌑',
         rarity: 'rare',
         category: 'movement',
@@ -281,8 +281,8 @@ const ITEMS_DB = {
 
     fire_sword: {
         id: 'fire_sword',
-        name: 'Огненный меч',
-        description: '+25 золота за каждое взятие. Огонь сжигает врагов!',
+        name: { ru: "Огненный меч", en: "Fire Sword", es: "Espada de Fuego" },
+        description: { ru: "+25 золота за каждое взятие. Огонь сжигает врагов!", en: "+25 gold for each capture. Fire burns the enemies!", es: "+25 de oro por cada captura. ¡El fuego quema a los enemigos!" },
         icon: '🔥',
         rarity: 'rare',
         category: 'offense',
@@ -296,8 +296,8 @@ const ITEMS_DB = {
 
     poison_dart: {
         id: 'poison_dart',
-        name: 'Отравленная стрела',
-        description: 'Пешка может атаковать прямо вперёд (не только по диагонали).',
+        name: { ru: "Отравленная стрела", en: "Poison Dart", es: "Dardo Envenenado" },
+        description: { ru: "Пешка может атаковать прямо вперёд (не только по диагонали).", en: "The Pawn can attack straight forward (not just diagonally).", es: "El Peón puede atacar hacia adelante (no solo en diagonal)." },
         icon: '🎯',
         rarity: 'rare',
         category: 'offense',
@@ -311,8 +311,8 @@ const ITEMS_DB = {
 
     cursed_mirror: {
         id: 'cursed_mirror',
-        name: 'Проклятое зеркало',
-        description: 'Пешка может атаковать назад по диагонали.',
+        name: { ru: "Проклятое зеркало", en: "Cursed Mirror", es: "Espejo Maldito" },
+        description: { ru: "Пешка может атаковать назад по диагонали.", en: "The Pawn can attack backwards diagonally.", es: "El Peón puede atacar hacia atrás en diagonal." },
         icon: '🪞',
         rarity: 'common',
         category: 'offense',
@@ -326,8 +326,8 @@ const ITEMS_DB = {
 
     steel_shield: {
         id: 'steel_shield',
-        name: 'Стальной щит',
-        description: 'Фигура выживает после двух взятий (2 заряда щита).',
+        name: { ru: "Стальной щит", en: "Steel Shield", es: "Escudo de Acero" },
+        description: { ru: "Фигура выживает после двух взятий (2 заряда щита).", en: "The piece survives two captures (2 shield charges).", es: "La pieza sobrevive a dos capturas (2 cargas de escudo)." },
         icon: '🔰',
         rarity: 'epic',
         category: 'defense',
@@ -341,8 +341,8 @@ const ITEMS_DB = {
 
     thorns: {
         id: 'thorns',
-        name: 'Шипы',
-        description: 'Фигура не может быть взята конями.',
+        name: { ru: "Шипы", en: "Thorns", es: "Espinas" },
+        description: { ru: "Фигура не может быть взята конями.", en: "The piece cannot be captured by Knights.", es: "La pieza no puede ser capturada por Caballos." },
         icon: '🌵',
         rarity: 'common',
         category: 'defense',
@@ -356,8 +356,8 @@ const ITEMS_DB = {
 
     lucky_coin: {
         id: 'lucky_coin',
-        name: 'Счастливая монета',
-        description: '+100 золота за победу в раунде.',
+        name: { ru: "Счастливая монета", en: "Lucky Coin", es: "Moneda de la Suerte" },
+        description: { ru: "+100 золота за победу в раунде.", en: "+100 gold for winning the round.", es: "+100 de oro por ganar la ronda." },
         icon: '🍀',
         rarity: 'rare',
         category: 'utility',
@@ -371,8 +371,8 @@ const ITEMS_DB = {
 
     phantom_cloak: {
         id: 'phantom_cloak',
-        name: 'Плащ призрака',
-        description: '35% шанс уклониться от взятия. Редкое везение!',
+        name: { ru: "Плащ призрака", en: "Phantom Cloak", es: "Capa Fantasma" },
+        description: { ru: "35% шанс уклониться от взятия. Редкое везение!", en: "35% chance to evade a capture. Rare luck!", es: "35% de probabilidad de evadir una captura. ¡Suerte rara!" },
         icon: '👻',
         rarity: 'epic',
         category: 'defense',
@@ -386,8 +386,8 @@ const ITEMS_DB = {
 
     queens_blessing: {
         id: 'queens_blessing',
-        name: 'Благословение королевы',
-        description: 'Ладья получает ходы по диагонали и может скользить как слон.',
+        name: { ru: "Благословение королевы", en: "Queen's Blessing", es: "Bendición de la Reina" },
+        description: { ru: "Ладья получает ходы по диагонали и может скользить как слон.", en: "The Rook gains diagonal moves and can slide like a Bishop.", es: "La Torre obtiene movimientos en diagonal y puede deslizarse como un Alfil." },
         icon: '💜',
         rarity: 'legendary',
         category: 'movement',
@@ -405,8 +405,8 @@ const ITEMS_DB = {
 
     teleport_rune: {
         id: 'teleport_rune',
-        name: 'Руна телепорта',
-        description: 'Фигура получает ход на 3 клетки в любом направлении.',
+        name: { ru: "Руна телепорта", en: "Teleport Rune", es: "Runa de Teletransporte" },
+        description: { ru: "Фигура получает ход на 3 клетки в любом направлении.", en: "The piece gains a move of up to 3 squares in any direction.", es: "La pieza obtiene un movimiento de hasta 3 casillas en cualquier dirección." },
         icon: '🔵',
         rarity: 'epic',
         category: 'movement',
@@ -420,8 +420,8 @@ const ITEMS_DB = {
 
     speed_rune: {
         id: 'speed_rune',
-        name: 'Руна ускорения',
-        description: '+2 к дальности хода скользящих фигур.',
+        name: { ru: "Руна ускорения", en: "Speed Rune", es: "Runa de Velocidad" },
+        description: { ru: "+2 к дальности хода скользящих фигур.", en: "+2 to the movement range of sliding pieces.", es: "+2 al rango de movimiento de las piezas deslizantes." },
         icon: '⚡',
         rarity: 'rare',
         category: 'movement',
@@ -435,8 +435,8 @@ const ITEMS_DB = {
 
     long_legs: {
         id: 'long_legs',
-        name: 'Длинные ноги',
-        description: 'Конь ходит по схеме 3+2 (вместо 2+1), большее покрытие.',
+        name: { ru: "Длинные ноги", en: "Long Legs", es: "Piernas Largas" },
+        description: { ru: "Конь ходит по схеме 3+2 (вместо 2+1), большее покрытие.", en: "The Knight moves in a 3+2 pattern (instead of 2+1), greater coverage.", es: "El Caballo se mueve en un patrón de 3+2 (en lugar de 2+1), mayor cobertura." },
         icon: '🦵',
         rarity: 'common',
         category: 'movement',
@@ -450,8 +450,8 @@ const ITEMS_DB = {
 
     diagonal_boots: {
         id: 'diagonal_boots',
-        name: 'Диагональные ботинки',
-        description: 'Ладья получает ход на 1 клетку по диагонали.',
+        name: { ru: "Диагональные ботинки", en: "Diagonal Boots", es: "Botas Diagonales" },
+        description: { ru: "Ладья получает ход на 1 клетку по диагонали.", en: "The Rook gains a move of 1 square diagonally.", es: "La Torre obtiene un movimiento de 1 casilla en diagonal." },
         icon: '👟',
         rarity: 'common',
         category: 'movement',
@@ -465,8 +465,8 @@ const ITEMS_DB = {
 
     horse_legs: {
         id: 'horse_legs',
-        name: 'Конские ноги',
-        description: 'Пешка дополнительно может ходить как конь (Г-образно).',
+        name: { ru: "Конские ноги", en: "Horse Legs", es: "Patas de Caballo" },
+        description: { ru: "Пешка дополнительно может ходить как конь (Г-образно).", en: "The Pawn can additionally move like a Knight (L-shape).", es: "El Peón puede moverse adicionalmente como un Caballo (en forma de L)." },
         icon: '🐎',
         rarity: 'rare',
         category: 'movement',
@@ -480,8 +480,8 @@ const ITEMS_DB = {
 
     sprinter_scroll: {
         id: 'sprinter_scroll',
-        name: 'Свиток спринтера',
-        description: 'Пешка всегда может двигаться на 2 клетки вперёд (не только с исходной позиции).',
+        name: { ru: "Свиток спринтера", en: "Sprinter Scroll", es: "Pergamino de Velocista" },
+        description: { ru: "Пешка всегда может двигаться на 2 клетки вперёд (не только с исходной позиции).", en: "The Pawn can always move 2 squares forward (not just from the starting position).", es: "El Peón siempre puede moverse 2 casillas hacia adelante (no solo desde la posición inicial)." },
         icon: '📋',
         rarity: 'common',
         category: 'movement',
@@ -495,8 +495,8 @@ const ITEMS_DB = {
 
     crab_claws: {
         id: 'crab_claws',
-        name: 'Клешни краба',
-        description: 'Ладья получает прыжки на 2 клетки вбок (горизонтальный конь).',
+        name: { ru: "Клешни краба", en: "Crab Claws", es: "Pinzas de Cangrejo" },
+        description: { ru: "Ладья получает прыжки на 2 клетки вбок (горизонтальный конь).", en: "The Rook gains 2-square horizontal jumps (horizontal Knight).", es: "La Torre obtiene saltos de 2 casillas hacia los lados (Caballo horizontal)." },
         icon: '🦀',
         rarity: 'rare',
         category: 'movement',
@@ -510,8 +510,8 @@ const ITEMS_DB = {
 
     moonwalk: {
         id: 'moonwalk',
-        name: 'Лунная походка',
-        description: 'Ладья получает возможность ходить назад по диагонали на 2 клетки.',
+        name: { ru: "Лунная походка", en: "Moonwalk", es: "Paso Lunar" },
+        description: { ru: "Ладья получает возможность ходить назад по диагонали на 2 клетки.", en: "The Rook gains the ability to move backwards diagonally by 2 squares.", es: "La Torre obtiene la habilidad de moverse hacia atrás en diagonal 2 casillas." },
         icon: '🌙',
         rarity: 'epic',
         category: 'movement',
@@ -525,8 +525,8 @@ const ITEMS_DB = {
 
     spiral_path: {
         id: 'spiral_path',
-        name: 'Спиральный путь',
-        description: 'Слон может дополнительно двигаться на 1 клетку по прямой.',
+        name: { ru: "Спиральный путь", en: "Spiral Path", es: "Camino en Espiral" },
+        description: { ru: "Слон может дополнительно двигаться на 1 клетку по прямой.", en: "The Bishop can additionally move 1 square in a straight line.", es: "El Alfil puede moverse adicionalmente 1 casilla en línea recta." },
         icon: '🌀',
         rarity: 'rare',
         category: 'movement',
@@ -540,8 +540,8 @@ const ITEMS_DB = {
 
     mirror_step: {
         id: 'mirror_step',
-        name: 'Зеркальный шаг',
-        description: 'Конь получает дополнительные зеркальные прыжки [-1,2] и [1,-2].',
+        name: { ru: "Зеркальный шаг", en: "Mirror Step", es: "Paso Espejo" },
+        description: { ru: "Конь получает дополнительные зеркальные прыжки [-1,2] и [1,-2].", en: "The Knight gains additional mirror jumps [-1,2] and [1,-2].", es: "El Caballo obtiene saltos espejo adicionales [-1,2] y [1,-2]." },
         icon: '🔀',
         rarity: 'rare',
         category: 'movement',
@@ -555,8 +555,8 @@ const ITEMS_DB = {
 
     sidewinder: {
         id: 'sidewinder',
-        name: 'Боковой ход',
-        description: 'Пешка может ходить на 1 клетку вбок (без взятия).',
+        name: { ru: "Боковой ход", en: "Sidewinder", es: "Movimiento Lateral" },
+        description: { ru: "Пешка может ходить на 1 клетку вбок (без взятия).", en: "The Pawn can move 1 square horizontally (without capturing).", es: "El Peón puede moverse 1 casilla horizontalmente (sin capturar)." },
         icon: '↔️',
         rarity: 'common',
         category: 'movement',
@@ -570,8 +570,8 @@ const ITEMS_DB = {
 
     octopus_arms: {
         id: 'octopus_arms',
-        name: 'Щупальца осьминога',
-        description: 'Слон получает прямые направления хода (становится ферзём по возможностям).',
+        name: { ru: "Щупальца осьминога", en: "Octopus Arms", es: "Tentáculos de Pulpo" },
+        description: { ru: "Слон получает прямые направления хода (становится ферзём по возможностям).", en: "The Bishop gains straight movement directions (becomes a Queen in capabilities).", es: "El Alfil obtiene direcciones de movimiento rectas (se convierte en una Reina en capacidades)." },
         icon: '🐙',
         rarity: 'epic',
         category: 'movement',
@@ -585,8 +585,8 @@ const ITEMS_DB = {
 
     tunnel_drill: {
         id: 'tunnel_drill',
-        name: 'Буровой снаряд',
-        description: 'Ладья может игнорировать одну фигуру на пути.',
+        name: { ru: "Буровой снаряд", en: "Tunnel Drill", es: "Taladro de Túnel" },
+        description: { ru: "Ладья может игнорировать одну фигуру на пути.", en: "The Rook can ignore one piece in its path.", es: "La Torre puede ignorar una pieza en su camino." },
         icon: '⛏️',
         rarity: 'rare',
         category: 'movement',
@@ -600,8 +600,8 @@ const ITEMS_DB = {
 
     cape_of_wind: {
         id: 'cape_of_wind',
-        name: 'Плащ ветра',
-        description: 'Фигура получает шаг на 1 клетку в любом направлении.',
+        name: { ru: "Плащ ветра", en: "Cape of Wind", es: "Capa de Viento" },
+        description: { ru: "Фигура получает шаг на 1 клетку в любом направлении.", en: "The piece gains a 1-square step in any direction.", es: "La pieza obtiene un paso de 1 casilla en cualquier dirección." },
         icon: '🌬️',
         rarity: 'common',
         category: 'movement',
@@ -615,8 +615,8 @@ const ITEMS_DB = {
 
     jetpack: {
         id: 'jetpack',
-        name: 'Реактивный ранец',
-        description: 'Пешка может двигаться до 4 клеток вперёд.',
+        name: { ru: "Реактивный ранец", en: "Jetpack", es: "Mochila Propulsora" },
+        description: { ru: "Пешка может двигаться до 4 клеток вперёд.", en: "The Pawn can move up to 4 squares forward.", es: "El Peón puede moverse hasta 4 casillas hacia adelante." },
         icon: '🚀',
         rarity: 'legendary',
         category: 'movement',
@@ -634,8 +634,8 @@ const ITEMS_DB = {
 
     snipers_scope: {
         id: 'snipers_scope',
-        name: 'Прицел снайпера',
-        description: '+50 золота за взятие с дистанции 3+ клетки.',
+        name: { ru: "Прицел снайпера", en: "Sniper's Scope", es: "Mira de Francotirador" },
+        description: { ru: "+50 золота за взятие с дистанции 3+ клетки.", en: "+50 gold for capturing from a distance of 3+ squares.", es: "+50 de oro por capturar desde una distancia de más de 3 casillas." },
         icon: '🎯',
         rarity: 'epic',
         category: 'offense',
@@ -649,8 +649,8 @@ const ITEMS_DB = {
 
     assassin_blade: {
         id: 'assassin_blade',
-        name: 'Клинок убийцы',
-        description: '+30 золота за взятие фигур противника конём.',
+        name: { ru: "Клинок убийцы", en: "Assassin's Blade", es: "Cuchilla de Asesino" },
+        description: { ru: "+30 золота за взятие фигур противника конём.", en: "+30 gold for capturing opponent's pieces with a Knight.", es: "+30 de oro por capturar piezas del oponente con un Caballo." },
         icon: '🗡️',
         rarity: 'rare',
         category: 'offense',
@@ -664,8 +664,8 @@ const ITEMS_DB = {
 
     battle_axe: {
         id: 'battle_axe',
-        name: 'Боевой топор',
-        description: 'Фигура может атаковать на 1 клетку по диагонали (дополнительно).',
+        name: { ru: "Боевой топор", en: "Battle Axe", es: "Hacha de Batalla" },
+        description: { ru: "Фигура может атаковать на 1 клетку по диагонали (дополнительно).", en: "The piece can attack 1 square diagonally (additionally).", es: "La pieza puede atacar 1 casilla en diagonal (adicionalmente)." },
         icon: '🪓',
         rarity: 'rare',
         category: 'offense',
@@ -679,8 +679,8 @@ const ITEMS_DB = {
 
     venom_fang: {
         id: 'venom_fang',
-        name: 'Ядовитый клык',
-        description: '+10 золота за каждое взятие.',
+        name: { ru: "Ядовитый клык", en: "Venom Fang", es: "Colmillo Venenoso" },
+        description: { ru: "+10 золота за каждое взятие.", en: "+10 gold for each capture.", es: "+10 de oro por cada captura." },
         icon: '🐍',
         rarity: 'common',
         category: 'offense',
@@ -694,8 +694,8 @@ const ITEMS_DB = {
 
     war_drum: {
         id: 'war_drum',
-        name: 'Военный барабан',
-        description: '+5 золота за каждый ход с взятием.',
+        name: { ru: "Военный барабан", en: "War Drum", es: "Tambor de Guerra" },
+        description: { ru: "+5 золота за каждый ход с взятием.", en: "+5 gold for each move with a capture.", es: "+5 de oro por cada movimiento con una captura." },
         icon: '🥁',
         rarity: 'common',
         category: 'offense',
@@ -709,8 +709,8 @@ const ITEMS_DB = {
 
     burning_bow: {
         id: 'burning_bow',
-        name: 'Горящий лук',
-        description: 'Слон может атаковать по прямой на 1 клетку.',
+        name: { ru: "Горящий лук", en: "Burning Bow", es: "Arco Ardiente" },
+        description: { ru: "Слон может атаковать по прямой на 1 клетку.", en: "The Bishop can attack in a straight line for 1 square.", es: "El Alfil puede atacar en línea recta por 1 casilla." },
         icon: '🏹',
         rarity: 'rare',
         category: 'offense',
@@ -724,8 +724,8 @@ const ITEMS_DB = {
 
     spike_trap: {
         id: 'spike_trap',
-        name: 'Шипованная ловушка',
-        description: 'Пешка получает +15 золота за взятие.',
+        name: { ru: "Шипованная ловушка", en: "Spike Trap", es: "Trampa de Picos" },
+        description: { ru: "Пешка получает +15 золота за взятие.", en: "The Pawn gains +15 gold per capture.", es: "El Peón obtiene +15 de oro por captura." },
         icon: '⚙️',
         rarity: 'common',
         category: 'offense',
@@ -739,8 +739,8 @@ const ITEMS_DB = {
 
     executioners_axe: {
         id: 'executioners_axe',
-        name: 'Топор палача',
-        description: '+100 золота за взятие ферзя.',
+        name: { ru: "Топор палача", en: "Executioner's Axe", es: "Hacha de Verdugo" },
+        description: { ru: "+100 золота за взятие ферзя.", en: "+100 gold for capturing a Queen.", es: "+100 de oro por capturar una Reina." },
         icon: '⚔️',
         rarity: 'epic',
         category: 'offense',
@@ -754,8 +754,8 @@ const ITEMS_DB = {
 
     hunters_mark: {
         id: 'hunters_mark',
-        name: 'Метка охотника',
-        description: '+20 золота за взятие коня.',
+        name: { ru: "Метка охотника", en: "Hunter's Mark", es: "Marca de Cazador" },
+        description: { ru: "+20 золота за взятие коня.", en: "+20 gold for capturing a Knight.", es: "+20 de oro por capturar un Caballo." },
         icon: '🏹',
         rarity: 'common',
         category: 'offense',
@@ -769,8 +769,8 @@ const ITEMS_DB = {
 
     battle_cry: {
         id: 'battle_cry',
-        name: 'Боевой клич',
-        description: '+15 золота за взятие ладьи.',
+        name: { ru: "Боевой клич", en: "Battle Cry", es: "Grito de Batalla" },
+        description: { ru: "+15 золота за взятие ладьи.", en: "+15 gold for capturing a Rook.", es: "+15 de oro por capturar una Torre." },
         icon: '📯',
         rarity: 'common',
         category: 'offense',
@@ -784,8 +784,8 @@ const ITEMS_DB = {
 
     rune_of_power: {
         id: 'rune_of_power',
-        name: 'Руна силы',
-        description: 'Взятие тяжёлой фигуры даёт +2 заряда щита.',
+        name: { ru: "Руна силы", en: "Rune of Power", es: "Runa de Poder" },
+        description: { ru: "Взятие тяжёлой фигуры даёт +2 заряда щита.", en: "Capturing a major piece grants +2 shield charges.", es: "Capturar una pieza mayor otorga +2 cargas de escudo." },
         icon: '💪',
         rarity: 'rare',
         category: 'offense',
@@ -799,8 +799,8 @@ const ITEMS_DB = {
 
     mirror_strike: {
         id: 'mirror_strike',
-        name: 'Удар отражения',
-        description: 'Слон может атаковать прямо на 2 клетки.',
+        name: { ru: "Удар отражения", en: "Mirror Strike", es: "Golpe Espejo" },
+        description: { ru: "Слон может атаковать прямо на 2 клетки.", en: "The Bishop can attack straight ahead for 2 squares.", es: "El Alfil puede atacar en línea recta por 2 casillas." },
         icon: '🌊',
         rarity: 'epic',
         category: 'offense',
@@ -818,8 +818,8 @@ const ITEMS_DB = {
 
     guardian_rune: {
         id: 'guardian_rune',
-        name: 'Руна стража',
-        description: 'Фигура не может быть взята слонами.',
+        name: { ru: "Руна стража", en: "Guardian Rune", es: "Runa de Guardián" },
+        description: { ru: "Фигура не может быть взята слонами.", en: "The piece cannot be captured by Bishops.", es: "La pieza no puede ser capturada por Alfiles." },
         icon: '🔮',
         rarity: 'common',
         category: 'defense',
@@ -833,8 +833,8 @@ const ITEMS_DB = {
 
     stone_skin: {
         id: 'stone_skin',
-        name: 'Каменная кожа',
-        description: '30% шанс уклониться от взятия.',
+        name: { ru: "Каменная кожа", en: "Stone Skin", es: "Piel de Piedra" },
+        description: { ru: "30% шанс уклониться от взятия.", en: "30% chance to evade a capture.", es: "30% de probabilidad de evadir una captura." },
         icon: '🪨',
         rarity: 'rare',
         category: 'defense',
@@ -848,8 +848,8 @@ const ITEMS_DB = {
 
     divine_shield: {
         id: 'divine_shield',
-        name: 'Божественный щит',
-        description: '3 заряда щита + 25% шанс уклонения.',
+        name: { ru: "Божественный щит", en: "Divine Shield", es: "Escudo Divino" },
+        description: { ru: "3 заряда щита + 25% шанс уклонения.", en: "3 shield charges + 25% chance of evasion.", es: "3 cargas de escudo + 25% de probabilidad de evasión." },
         icon: '✨',
         rarity: 'legendary',
         category: 'defense',
@@ -863,8 +863,8 @@ const ITEMS_DB = {
 
     titanium_plate: {
         id: 'titanium_plate',
-        name: 'Титановая плита',
-        description: 'Иммунитет к коням и пешкам.',
+        name: { ru: "Титановая плита", en: "Titanium Plate", es: "Placa de Titanio" },
+        description: { ru: "Иммунитет к коням и пешкам.", en: "Immunity to Knights and Pawns.", es: "Inmunidad a Caballos y Peones." },
         icon: '🏗️',
         rarity: 'legendary',
         category: 'defense',
@@ -878,8 +878,8 @@ const ITEMS_DB = {
 
     holy_water: {
         id: 'holy_water',
-        name: 'Святая вода',
-        description: 'Фигура получает 1 заряд щита.',
+        name: { ru: "Святая вода", en: "Holy Water", es: "Agua Bendita" },
+        description: { ru: "Фигура получает 1 заряд щита.", en: "The piece gains 1 shield charge.", es: "La pieza obtiene 1 carga de escudo." },
         icon: '💧',
         rarity: 'common',
         category: 'defense',
@@ -893,8 +893,8 @@ const ITEMS_DB = {
 
     reflective_coat: {
         id: 'reflective_coat',
-        name: 'Отражающее покрытие',
-        description: 'Фигура не может быть взята ладьями.',
+        name: { ru: "Отражающее покрытие", en: "Reflective Coat", es: "Abrigo Reflectante" },
+        description: { ru: "Фигура не может быть взята ладьями.", en: "The piece cannot be captured by Rooks.", es: "La pieza no puede ser capturada por Torres." },
         icon: '🪞',
         rarity: 'rare',
         category: 'defense',
@@ -908,8 +908,8 @@ const ITEMS_DB = {
 
     silk_robe: {
         id: 'silk_robe',
-        name: 'Шёлковый халат',
-        description: '15% шанс уклониться от взятия.',
+        name: { ru: "Шёлковый халат", en: "Silk Robe", es: "Túnica de Seda" },
+        description: { ru: "15% шанс уклониться от взятия.", en: "15% chance to evade a capture.", es: "15% de probabilidad de evadir una captura." },
         icon: '👘',
         rarity: 'common',
         category: 'defense',
@@ -923,8 +923,8 @@ const ITEMS_DB = {
 
     fire_resistance: {
         id: 'fire_resistance',
-        name: 'Огнестойкость',
-        description: 'Фигура не может быть взята ферзями.',
+        name: { ru: "Огнестойкость", en: "Fire Resistance", es: "Resistencia al Fuego" },
+        description: { ru: "Фигура не может быть взята ферзями.", en: "The piece cannot be captured by Queens.", es: "La pieza no puede ser capturada por Reinas." },
         icon: '🔥',
         rarity: 'rare',
         category: 'defense',
@@ -938,8 +938,8 @@ const ITEMS_DB = {
 
     absorb_rune: {
         id: 'absorb_rune',
-        name: 'Руна поглощения',
-        description: 'При взятии этой фигуры: +50 золота.',
+        name: { ru: "Руна поглощения", en: "Absorb Rune", es: "Runa de Absorción" },
+        description: { ru: "При взятии этой фигуры: +50 золота.", en: "When this piece is captured: +50 gold.", es: "Cuando esta pieza es capturada: +50 de oro." },
         icon: '💡',
         rarity: 'epic',
         category: 'defense',
@@ -953,8 +953,8 @@ const ITEMS_DB = {
 
     last_stand: {
         id: 'last_stand',
-        name: 'Последний рубеж',
-        description: 'При 1 заряде щита: 60% шанс уклонения.',
+        name: { ru: "Последний рубеж", en: "Last Stand", es: "Última Batalla" },
+        description: { ru: "При 1 заряде щита: 60% шанс уклонения.", en: "With 1 shield charge remaining: 60% chance of evasion.", es: "Con 1 carga de escudo restante: 60% de probabilidad de evasión." },
         icon: '🗡️',
         rarity: 'legendary',
         category: 'defense',
@@ -968,8 +968,8 @@ const ITEMS_DB = {
 
     reinforced_armor: {
         id: 'reinforced_armor',
-        name: 'Усиленная броня',
-        description: 'Ладья не может быть взята слонами.',
+        name: { ru: "Усиленная броня", en: "Reinforced Armor", es: "Armadura Reforzada" },
+        description: { ru: "Ладья не может быть взята слонами.", en: "The Rook cannot be captured by Bishops.", es: "La Torre no puede ser capturada por Alfiles." },
         icon: '🛡️',
         rarity: 'common',
         category: 'defense',
@@ -983,8 +983,8 @@ const ITEMS_DB = {
 
     mirror_armor: {
         id: 'mirror_armor',
-        name: 'Зеркальная броня',
-        description: '50% шанс уклонения, но -1 к дальности хода.',
+        name: { ru: "Зеркальная броня", en: "Mirror Armor", es: "Armadura Espejo" },
+        description: { ru: "50% шанс уклонения, но -1 к дальности хода.", en: "50% chance of evasion, but -1 to movement range.", es: "50% de probabilidad de evasión, pero -1 al rango de movimiento." },
         icon: '⚡',
         rarity: 'epic',
         category: 'defense',
@@ -1002,8 +1002,8 @@ const ITEMS_DB = {
 
     gold_ore: {
         id: 'gold_ore',
-        name: 'Золотой самородок',
-        description: '+50 золота за победу в раунде.',
+        name: { ru: "Золотой самородок", en: "Gold Nugget", es: "Pepita de Oro" },
+        description: { ru: "+50 золота за победу в раунде.", en: "+50 gold for winning the round.", es: "+50 de oro por ganar la ronda." },
         icon: '🪙',
         rarity: 'common',
         category: 'utility',
@@ -1017,8 +1017,8 @@ const ITEMS_DB = {
 
     treasure_map: {
         id: 'treasure_map',
-        name: 'Карта сокровищ',
-        description: '+150 золота за победу в раунде.',
+        name: { ru: "Карта сокровищ", en: "Treasure Map", es: "Mapa del Tesoro" },
+        description: { ru: "+150 золота за победу в раунде.", en: "+150 gold for winning the round.", es: "+150 de oro por ganar la ronda." },
         icon: '🗺️',
         rarity: 'rare',
         category: 'utility',
@@ -1032,8 +1032,8 @@ const ITEMS_DB = {
 
     gem_collector: {
         id: 'gem_collector',
-        name: 'Сборщик самоцветов',
-        description: '+20 золота за взятие слона.',
+        name: { ru: "Сборщик самоцветов", en: "Gem Collector", es: "Coleccionista de Gemas" },
+        description: { ru: "+20 золота за взятие слона.", en: "+20 gold for capturing a Bishop.", es: "+20 de oro por capturar un Alfil." },
         icon: '💎',
         rarity: 'common',
         category: 'utility',
@@ -1047,8 +1047,8 @@ const ITEMS_DB = {
 
     royal_treasury: {
         id: 'royal_treasury',
-        name: 'Королевская казна',
-        description: '+300 золота за победу в раунде!',
+        name: { ru: "Королевская казна", en: "Royal Treasury", es: "Tesorería Real" },
+        description: { ru: "+300 золота за победу в раунде!", en: "+300 gold for winning the round!", es: "¡+300 de oro por ganar la ronda!" },
         icon: '🏦',
         rarity: 'legendary',
         category: 'utility',
@@ -1062,8 +1062,8 @@ const ITEMS_DB = {
 
     double_loot: {
         id: 'double_loot',
-        name: 'Двойная добыча',
-        description: 'Вдвое больше золота за взятие ферзя.',
+        name: { ru: "Двойная добыча", en: "Double Loot", es: "Doble Botín" },
+        description: { ru: "Вдвое больше золота за взятие ферзя.", en: "Double gold for capturing a Queen.", es: "Doble de oro por capturar una Reina." },
         icon: '💰',
         rarity: 'rare',
         category: 'utility',
@@ -1077,8 +1077,8 @@ const ITEMS_DB = {
 
     bounty_hunter: {
         id: 'bounty_hunter',
-        name: 'Охотник за наградой',
-        description: '+30 золота за взятие ладьи.',
+        name: { ru: "Охотник за наградой", en: "Bounty Hunter", es: "Cazarrecompensas" },
+        description: { ru: "+30 золота за взятие ладьи.", en: "+30 gold for capturing a Rook.", es: "+30 de oro por capturar una Torre." },
         icon: '🎖️',
         rarity: 'rare',
         category: 'utility',
@@ -1092,8 +1092,8 @@ const ITEMS_DB = {
 
     iron_will: {
         id: 'iron_will',
-        name: 'Железная воля',
-        description: '10% шанс получить случайный предмет после взятия.',
+        name: { ru: "Железная воля", en: "Iron Will", es: "Voluntad de Hierro" },
+        description: { ru: "10% шанс получить случайный предмет после взятия.", en: "10% chance to receive a random item after a capture.", es: "10% de probabilidad de recibir un objeto aleatorio después de una captura." },
         icon: '💪',
         rarity: 'common',
         category: 'utility',
@@ -1107,8 +1107,8 @@ const ITEMS_DB = {
 
     second_chance: {
         id: 'second_chance',
-        name: 'Второй шанс',
-        description: 'Пешка может превратиться в любую фигуру при взятии.',
+        name: { ru: "Второй шанс", en: "Second Chance", es: "Segunda Oportunidad" },
+        description: { ru: "Пешка может превратиться в любую фигуру при взятии.", en: "The Pawn can promote to any piece upon capture.", es: "El Peón puede coronar a cualquier pieza al capturar." },
         icon: '🔄',
         rarity: 'epic',
         category: 'utility',
@@ -1122,8 +1122,8 @@ const ITEMS_DB = {
 
     cursed_gold: {
         id: 'cursed_gold',
-        name: 'Проклятое золото',
-        description: '+200 золота за победу, -10 зол. за каждый ход без взятия.',
+        name: { ru: "Проклятое золото", en: "Cursed Gold", es: "Oro Maldito" },
+        description: { ru: "+200 золота за победу, -10 зол. за каждый ход без взятия.", en: "+200 gold for winning, -10 gold for each move without a capture.", es: "+200 de oro por ganar, -10 de oro por cada movimiento sin captura." },
         icon: '☠️',
         rarity: 'rare',
         category: 'utility',
@@ -1137,8 +1137,8 @@ const ITEMS_DB = {
 
     scroll_of_greed: {
         id: 'scroll_of_greed',
-        name: 'Свиток жадности',
-        description: 'x3 золото за взятие тяжёлых фигур (ладья/ферзь).',
+        name: { ru: "Свиток жадности", en: "Scroll of Greed", es: "Pergamino de Avaricia" },
+        description: { ru: "x3 золото за взятие тяжёлых фигур (ладья/ферзь).", en: "x3 gold for capturing major pieces (Rook/Queen).", es: "x3 de oro por capturar piezas mayores (Torre/Reina)." },
         icon: '📜',
         rarity: 'epic',
         category: 'utility',
@@ -1152,8 +1152,8 @@ const ITEMS_DB = {
 
     experience_orb: {
         id: 'experience_orb',
-        name: 'Шар опыта',
-        description: 'Следующий предмет в магазине стоит -20 золота.',
+        name: { ru: "Шар опыта", en: "Experience Orb", es: "Orbe de Experiencia" },
+        description: { ru: "Следующий предмет в магазине стоит -20 золота.", en: "The next item in the shop costs -20 gold.", es: "El siguiente objeto en la tienda cuesta -20 de oro." },
         icon: '🔮',
         rarity: 'common',
         category: 'utility',
@@ -1167,8 +1167,8 @@ const ITEMS_DB = {
 
     merchants_ring: {
         id: 'merchants_ring',
-        name: 'Перстень купца',
-        description: '-15% стоимость всех предметов в магазине.',
+        name: { ru: "Перстень купца", en: "Merchant's Ring", es: "Anillo de Comerciante" },
+        description: { ru: "-15% стоимость всех предметов в магазине.", en: "-15% to the cost of all items in the shop.", es: "-15% al costo de todos los objetos en la tienda." },
         icon: '💍',
         rarity: 'rare',
         category: 'utility',
@@ -1182,8 +1182,8 @@ const ITEMS_DB = {
 
     kings_signet: {
         id: 'kings_signet',
-        name: 'Перстень короля',
-        description: 'Каждая ваша фигура на поле даёт +5 золота за ход.',
+        name: { ru: "Перстень короля", en: "King's Signet", es: "Sello del Rey" },
+        description: { ru: "Каждая ваша фигура на поле даёт +5 золота за ход.", en: "Each of your pieces on the board gives +5 gold per turn.", es: "Cada una de tus piezas en el tablero da +5 de oro por turno." },
         icon: '👑',
         rarity: 'legendary',
         category: 'utility',
@@ -1201,8 +1201,8 @@ const ITEMS_DB = {
 
     star_map: {
         id: 'star_map',
-        name: 'Звёздная карта',
-        description: 'Ферзь получает Г-образные прыжки как у коня.',
+        name: { ru: 'Звездная Карта', en: "Star Map", es: "Mapa Estelar" },
+        description: { ru: 'Позволяет фигуре ходить как Конь.', en: "Allows piece to move as a Knight.", es: "Permite que la pieza se mueva como un Caballo." },
         icon: '⭐',
         rarity: 'legendary',
         category: 'movement',
@@ -1216,8 +1216,8 @@ const ITEMS_DB = {
 
     soul_gem: {
         id: 'soul_gem',
-        name: 'Душевный камень',
-        description: 'Взятие фигуры врага: воскрешает одну вашу взятую пешку.',
+        name: { ru: 'Камень Души', en: "Soul Gem", es: "Gema del Alma" },
+        description: { ru: 'При взятии случайная мертвая дружественная фигура возрождается.', en: "When piece captures, revives a random friendly piece.", es: "Cuando la pieza captura, revive una pieza aliada al azar." },
         icon: '🔵',
         rarity: 'legendary',
         category: 'utility',
@@ -1231,8 +1231,8 @@ const ITEMS_DB = {
 
     demonic_pact: {
         id: 'demonic_pact',
-        name: 'Демонический пакт',
-        description: 'x2 золота за все взятия, но −1 заряд щита навсегда.',
+        name: { ru: 'Демонический Пакт', en: "Demonic Pact", es: "Pacto Demoníaco" },
+        description: { ru: 'Золото x2, но вычитается 1 щит.', en: "x2 Gold gained, but shield gets -1 penalty.", es: "x2 de Oro ganado, pero el escudo recibe penalización de -1." },
         icon: '😈',
         rarity: 'legendary',
         category: 'utility',
@@ -1246,8 +1246,8 @@ const ITEMS_DB = {
 
     angelic_halo: {
         id: 'angelic_halo',
-        name: 'Ангельский нимб',
-        description: 'Воскрешает одну взятую тяжёлую фигуру в конце раунда.',
+        name: { ru: 'Ангельский Нимб', en: "Angelic Halo", es: "Halo Angelical" },
+        description: { ru: 'Возрождает фигуру один раз после смерти.', en: "Revives the piece once after dying.", es: "Revive a la pieza una vez después de morir." },
         icon: '😇',
         rarity: 'legendary',
         category: 'defense',
@@ -1261,8 +1261,8 @@ const ITEMS_DB = {
 
     chaos_gem: {
         id: 'chaos_gem',
-        name: 'Камень хаоса',
-        description: 'Каждые 3 хода: случайный мощный эффект (доп. золото, щит или ход).',
+        name: { ru: 'Камень Хаоса', en: "Chaos Gem", es: "Gema del Caos" },
+        description: { ru: 'Случайный эффект каждые 3 хода.', en: "Random effects every 3 turns.", es: "Efectos aleatorios cada 3 turnos." },
         icon: '🌈',
         rarity: 'legendary',
         category: 'utility',
@@ -1276,8 +1276,8 @@ const ITEMS_DB = {
 
     infinity_stone: {
         id: 'infinity_stone',
-        name: 'Камень бесконечности',
-        description: 'Ферзь получает ВСЕ типы движений (включая Г-образные прыжки).',
+        name: { ru: 'Камень Бесконечности', en: "Infinity Stone", es: "Piedra del Infinito" },
+        description: { ru: 'Фигура может походить на любую клетку доски.', en: "Piece can move anywhere on the board.", es: "La pieza puede moverse a cualquier parte del tablero." },
         icon: '💜',
         rarity: 'legendary',
         category: 'movement',
@@ -1291,8 +1291,8 @@ const ITEMS_DB = {
 
     omega_rune: {
         id: 'omega_rune',
-        name: 'Омега-руна',
-        description: '+1 к дальности хода, +1 щит, +10 золота за взятие одновременно.',
+        name: { ru: 'Омега Руна', en: "Omega Rune", es: "Runa Omega" },
+        description: { ru: '+1 дальность, +1 щит, +10 золота за взятие.', en: "+1 Range, +1 Shield, +10 Gold per capture.", es: "+1 Rango, +1 Escudo, +10 Oro por captura." },
         icon: '🔺',
         rarity: 'legendary',
         category: 'utility',
@@ -1306,8 +1306,8 @@ const ITEMS_DB = {
 
     beta_tester_cap: {
         id: 'beta_tester_cap',
-        name: 'Шапка бета-тестера',
-        description: 'Фигура телепортируется на ЛЮБУЮ клетку (кроме своих и вражеского короля) и бьёт любую фигуру там же. 10 зарядов щита.',
+        name: { ru: 'Шапка Бета-Тестера', en: "Beta Tester Cap", es: "Gorra de Beta Tester" },
+        description: { ru: 'Сила разработчика: Ход куда угодно, 10 щитов.', en: "Dev powers: Move anywhere, 10 Shields.", es: "Poderes Dev: Muévete a cualquier parte, 10 Escudos." },
         icon: '🧢',
         rarity: 'legendary',
         category: 'movement',
@@ -1382,14 +1382,14 @@ function getShopItems(count, playerGold, luckBonus = 0) {
 
 // Rarity colors and labels
 const RARITY_CONFIG = {
-    common:    { label: 'Обычный',     color: '#9a95b0', bgColor: 'rgba(154,149,176,0.1)', border: 'rgba(154,149,176,0.3)' },
-    rare:      { label: 'Редкий',      color: '#4488ff', bgColor: 'rgba(68,136,255,0.1)',  border: 'rgba(68,136,255,0.3)'  },
-    epic:      { label: 'Эпический',   color: '#9d93fa', bgColor: 'rgba(157,147,250,0.1)', border: 'rgba(157,147,250,0.3)' },
-    legendary: { label: 'Легендарный', color: '#f0c048', bgColor: 'rgba(240,192,72,0.1)',  border: 'rgba(240,192,72,0.3)'  },
+    common:    { label: { ru: 'Обычный', en: 'Common', es: 'Común' },     color: '#9a95b0', bgColor: 'rgba(154,149,176,0.1)', border: 'rgba(154,149,176,0.3)' },
+    rare:      { label: { ru: 'Редкий', en: 'Rare', es: 'Raro' },      color: '#4488ff', bgColor: 'rgba(68,136,255,0.1)',  border: 'rgba(68,136,255,0.3)'  },
+    epic:      { label: { ru: 'Эпический', en: 'Epic', es: 'Épico' },   color: '#9d93fa', bgColor: 'rgba(157,147,250,0.1)', border: 'rgba(157,147,250,0.3)' },
+    legendary: { label: { ru: 'Легендарный', en: 'Legendary', es: 'Legendario' }, color: '#f0c048', bgColor: 'rgba(240,192,72,0.1)',  border: 'rgba(240,192,72,0.3)'  },
 };
 
 const CATEGORY_LABELS = {
-    movement: '🏃 Движение',
+    movement: { ru: '🏃 Движение', en: '🏃 Movement', es: '🏃 Movimiento' },
     offense:  '🗡 Атака',
     defense:  '🛡 Защита',
     utility:  '🔮 Утилиты',
