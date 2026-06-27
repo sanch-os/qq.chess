@@ -91,6 +91,32 @@ class ChessEngine {
         }
     }
 
+    setupBlackMirror() {
+        // Clear black's half just in case
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 8; c++) {
+                this.board[r][c] = null;
+            }
+        }
+        // Mirror from white's half
+        for (let r = 4; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const whitePiece = this.board[r][c];
+                if (whitePiece && whitePiece.color === 'white') {
+                    const blackPiece = new PieceEntity(whitePiece.type, 'black');
+                    // Copy items
+                    whitePiece.getItems().forEach((item, index) => {
+                        if (item) {
+                            blackPiece.items[index] = { ...item };
+                            blackPiece.recalculateStats();
+                        }
+                    });
+                    this.board[7 - r][c] = blackPiece;
+                }
+            }
+        }
+    }
+
     placePiece(row, col, type, color) {
         this.board[row][col] = new PieceEntity(type, color);
         return this.board[row][col];

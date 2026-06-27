@@ -29,9 +29,55 @@ class RunManager {
         this.active = true;
         this.state = 'starting_items';
 
+        // Generate a fresh run sequence: random boss every 3rd round
+        this._generateRunSequence();
+
         // Give player 12 random starting items
         this.playerItems = getRandomItems(12);
         this.startingItemsGiven = true;
+    }
+
+    // Build a procedural sequence of encounters for this run.
+    // Every 3rd slot (index 2, 5, 8...) is a random boss.
+    // Other slots are random non-boss encounters.
+    _generateRunSequence() {
+        const allEncounters = getEncounters();
+        const bossPool    = allEncounters.filter(e => e.isBoss);
+        const normalPool  = allEncounters.filter(e => !e.isBoss);
+
+        // Shuffle helpers
+        const shuffle = arr => arr.slice().sort(() => Math.random() - 0.5);
+
+        const shuffledBosses  = shuffle(bossPool);
+        const shuffledNormals = shuffle(normalPool);
+
+        // Always use 9 rounds (3 cycles of 3) — tweak as needed
+        const TOTAL_ROUNDS = 9;
+        this.encounters = [];
+        let bossIdx  = 0;
+        let normalIdx = 0;
+
+        for (let i = 0; i < TOTAL_ROUNDS; i++) {
+            if ((i + 1) % 3 === 0) {
+                // Boss slot — pick random boss (loop if exhausted)
+                const boss = shuffledBosses[bossIdx % shuffledBosses.length];
+                bossIdx++;
+                this.encounters.push({ ...boss });
+            } else {
+                // Normal slot — pick random normal (loop if exhausted)
+                const normal = shuffledNormals[normalIdx % shuffledNormals.length];
+                normalIdx++;
+                // Scale difficulty slightly with progress
+                const scale = Math.floor(i / 3);
+                this.encounters.push({
+                    ...normal,
+                    aiDepth: Math.min(4, (normal.aiDepth || 2) + scale),
+                    goldReward: (normal.goldReward || 60) + scale * 15,
+                });
+            }
+        }
+
+        this.totalRounds = this.encounters.length;
     }
 
     // --- Round Management ---
@@ -226,7 +272,7 @@ class RunManager {
     }
 
     // --- Item Equipment ---
-    equipItemToPiece(itemIndex, piece) {
+    equipItemToPiece(itemIndex, piece, keepInStash = false) {
         if (itemIndex < 0 || itemIndex >= this.playerItems.length) return false;
         const item = this.playerItems[itemIndex];
 
@@ -239,13 +285,20 @@ class RunManager {
         if (slot === -1) return false;
 
         piece.setItem(slot, { ...item });
-        this.playerItems.splice(itemIndex, 1);
+        if (!keepInStash) {
+            this.playerItems.splice(itemIndex, 1);
+        }
         return true;
     }
 
-    unequipItemFromPiece(piece, slot) {
+    unequipItemFromPiece(piece, slot, destroyOnUnequip = false) {
         const item = piece.removeItem(slot);
         if (!item) return false;
+        
+        if (destroyOnUnequip) {
+            return true; // Just remove it from piece, don't put back in stash
+        }
+
         if (this.playerItems.length >= STASH_LIMIT) {
             // Stash full — re-equip the item and return false
             piece.setItem(slot, item);

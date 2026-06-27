@@ -5,6 +5,14 @@
 (function () {
     'use strict';
 
+    // Initialize Mobile Drag Drop polyfill for iOS/touch support
+    MobileDragDrop.polyfill({
+        dragImageTranslateOverride: MobileDragDrop.scrollBehaviourDragImageTranslateOverride
+    });
+    // Prevent default scroll behavior while dragging on touch devices
+    window.addEventListener('touchmove', function() {}, {passive: false});
+
+
     // --- State ---
     let engine = new ChessEngine();
     let ai = new ChessAI(3);
@@ -12,6 +20,7 @@
     let isRoguelikeMode = false;
     let isCreativeMode = false;
     let isPvP = false;
+    let isMirrorMode = false;
     let isBlackSetup = false; // true when black player is placing pieces in PvP
 
     let currentScreen = 'menu';
@@ -170,20 +179,31 @@
                 cell.classList.add('has-piece');
                 const pieceEl = document.createElement('span');
                 pieceEl.className = 'piece';
-                pieceEl.textContent = engine.getSymbol(piece);
+                // Use SVG if available, otherwise fall back to unicode symbol
+                const svgContent = getPieceSVG(piece.color, piece.type);
+                if (svgContent && svgContent.startsWith('<svg')) {
+                    pieceEl.innerHTML = svgContent;
+                } else {
+                    pieceEl.textContent = svgContent || engine.getSymbol(piece);
+                }
 
                 // Item badge: count equipped items (non-null slots)
                 if (piece instanceof PieceEntity) {
                     const equippedItems = piece.getItems();
                     if (equippedItems.length > 0) {
                         const badge = document.createElement('div');
-                        badge.className = 'item-badge';
+                        badge.className = 'piece-item-badge';
                         badge.textContent = equippedItems.length;
                         // Color by rarity of first item
                         const rarityColors = { common: '#9a95b0', rare: '#4488ff', epic: '#9d93fa', legendary: '#f0c048' };
                         badge.style.borderColor = rarityColors[equippedItems[0].rarity] || '#9a95b0';
                         pieceEl.appendChild(badge);
                     }
+                    
+                    // Future hats container
+                    const hatsContainer = document.createElement('div');
+                    hatsContainer.className = 'piece-hats';
+                    pieceEl.appendChild(hatsContainer);
                 }
 
                 if (container === boardSetup && piece.color === 'white') {
@@ -309,16 +329,17 @@
         inventoryEl.innerHTML = '';
         inventory.forEach((item, index) => {
             const el = document.createElement('div');
-            el.className = `inventory-item ${item.remaining <= 0 ? 'used' : ''}`;
+            const isInfinite = isCreativeMode; // Creative = infinite
+            el.className = `inventory-item ${(!isInfinite && item.remaining <= 0) ? 'used' : ''}`;
             el.textContent = PIECE_SYMBOLS.white[item.type];
-            el.setAttribute('draggable', item.remaining > 0 ? 'true' : 'false');
+            el.setAttribute('draggable', (isInfinite || item.remaining > 0) ? 'true' : 'false');
             el.dataset.type = item.type;
             el.dataset.index = index;
 
-            if (item.total > 1) {
+            if (item.total > 1 || isInfinite) {
                 const count = document.createElement('span');
                 count.className = 'item-count';
-                count.textContent = `×${item.remaining}`;
+                count.textContent = isInfinite ? '∞' : `×${item.remaining}`;
                 el.appendChild(count);
             }
 
@@ -338,7 +359,8 @@
             const tDesc = window.t_item(item, 'description');
             const el = document.createElement('div');
             el.className = `stash-item rarity-${item.rarity || 'common'}`;
-            el.innerHTML = `<div class="item-icon">${item.icon || '📦'}</div>
+            const infBadge = isCreativeMode ? `<div class="item-badge" style="background:rgba(0,0,0,0.8); right:0; top:0;">∞</div>` : '';
+            el.innerHTML = `<div class="item-icon">${item.icon || '📦'}</div>${infBadge}
                             <div class="item-tooltip"><strong>${tName}</strong><br>${tDesc}</div>`;
             el.setAttribute('draggable', 'true');
             el.dataset.itemIndex = idx;
@@ -380,7 +402,7 @@
         const type = el.dataset.type;
         const idx = parseInt(el.dataset.index);
         const invItem = inventory[idx];
-        if (!invItem || invItem.remaining <= 0) {
+        if (!invItem || (!isCreativeMode && invItem.remaining <= 0)) {
             e.preventDefault();
             return;
         }
@@ -482,7 +504,7 @@
             // Equip item to piece
             const setupColor = isBlackSetup ? 'black' : 'white';
             if (piece && piece.color === setupColor && piece instanceof PieceEntity) {
-                runManager.equipItemToPiece(draggedItem.itemIndex, piece);
+                runManager.equipItemToPiece(draggedItem.itemIndex, piece, isCreativeMode);
                 renderStashSetup();
                 renderBoard(boardSetup);
             }
@@ -494,9 +516,9 @@
             const setupColor = isBlackSetup ? 'black' : 'white';
             if (draggedPiece.source === 'inventory') {
                 const invItem = inventory[draggedPiece.index];
-                if (!invItem || invItem.remaining <= 0) return;
+                if (!invItem || (!isCreativeMode && invItem.remaining <= 0)) return;
                 engine.board[r][c] = new PieceEntity(draggedPiece.type, setupColor);
-                invItem.remaining--;
+                if (!isCreativeMode) invItem.remaining--;
             } else if (draggedPiece.source === 'board') {
                 const p = engine.board[draggedPiece.row][draggedPiece.col];
                 engine.board[draggedPiece.row][draggedPiece.col] = null;
@@ -588,9 +610,11 @@
             el.dataset.shopIndex = index;
             const tName = window.t_item(item, 'name');
             const tDesc = window.t_item(item, 'description');
+            const _wr = ItemStats.format(item.id);
+            const _wrBadge = _wr !== '\u2014' ? `<span class="item-winrate">${_wr}</span>` : '';
             el.innerHTML = `
                 <div class="item-icon">${item.icon || '📦'}</div>
-                <div class="item-name">${tName}</div>
+                <div class="item-name">${tName}${_wrBadge}</div>
                 <div class="item-cost">${item.cost} 🪙</div>
                 <div class="item-tooltip">${tDesc}</div>
             `;
@@ -653,9 +677,11 @@
             el.dataset.shopIndex = index;
             const tName = window.t_item(item, 'name');
             const tDesc = window.t_item(item, 'description');
+            const _wr = ItemStats.format(item.id);
+            const _wrBadge = _wr !== '\u2014' ? `<span class="item-winrate">${_wr}</span>` : '';
             el.innerHTML = `
                 <div class="item-icon">${item.icon || '📦'}</div>
-                <div class="item-name">${tName}</div>
+                <div class="item-name">${tName}${_wrBadge}</div>
                 <div class="item-cost">${item.cost} 🪙</div>
                 <div class="item-tooltip">${tDesc}</div>
             `;
@@ -717,8 +743,8 @@
     // --- Event Bindings ---
     function bindEvents() {
         document.querySelectorAll('.lang-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                changeLanguage(e.target.dataset.lang);
+            btn.addEventListener('click', () => {
+                changeLanguage(btn.dataset.lang);
             });
         });
 
@@ -735,10 +761,11 @@
             clearSetupOverlay();
         });
 
-        document.getElementById('btn-new-game').addEventListener('click', () => {
+        document.getElementById('btn-mirror-match').addEventListener('click', () => {
             isRoguelikeMode = false;
             isCreativeMode = false;
             isPvP = false;
+            isMirrorMode = true;
             isBlackSetup = false;
             engine.reset();
             resetInventory();
@@ -887,7 +914,42 @@
             updateCapturedPieces();
         });
 
+        // Surrender: show confirm modal first
+        const modalSurrender = document.getElementById('modal-surrender');
         document.getElementById('btn-resign').addEventListener('click', () => {
+            if (engine.gameOver) return;
+            modalSurrender.classList.add('active');
+        });
+        document.getElementById('btn-surrender-cancel').addEventListener('click', () => {
+            modalSurrender.classList.remove('active');
+        });
+        document.getElementById('btn-surrender-confirm').addEventListener('click', () => {
+            modalSurrender.classList.remove('active');
+            engine.gameResult = 'black'; // you surrender, black wins
+            handleGameOver();
+        });
+
+        // Settings Modal
+        const modalSettings = document.getElementById('modal-settings');
+        document.getElementById('btn-settings').addEventListener('click', () => {
+            modalSettings.classList.add('active');
+        });
+        document.getElementById('btn-settings-close').addEventListener('click', () => {
+            modalSettings.classList.remove('active');
+        });
+        
+        let tutorialEnabled = true;
+        document.getElementById('setting-tutorial-toggle').addEventListener('change', (e) => {
+            tutorialEnabled = e.target.checked;
+        });
+
+        // Close on backdrop click
+        modalSurrender.addEventListener('click', (e) => {
+            if (e.target === modalSurrender) modalSurrender.classList.remove('active');
+        });
+
+        document.getElementById('btn-surrender-confirm').addEventListener('click', () => {
+            modalSurrender.classList.remove('active');
             if (engine.gameOver) return;
             engine.gameOver = true;
             engine.gameResult = 'black';
@@ -907,7 +969,7 @@
                 showScreen('menu');
             } else {
                 engine.reset();
-                resetInventory();
+                resetInventory(isCreativeMode); // keep creative flag
                 renderBoard(boardSetup);
                 updateStartButton();
                 showScreen('setup');
@@ -1062,6 +1124,11 @@
             engine.setupBlackStandard();
             document.getElementById('run-gold').textContent = '';
             document.getElementById('run-round').textContent = window.t('run.creative_bot');
+            document.getElementById('btn-undo').style.display = 'block';
+        } else if (isMirrorMode) {
+            engine.setupBlackMirror();
+            document.getElementById('run-gold').textContent = '';
+            document.getElementById('run-round').textContent = window.t('menu.mirror');
             document.getElementById('btn-undo').style.display = 'block';
         } else {
             engine.setupBlackStandard();
@@ -1576,6 +1643,18 @@
             const goldBonus = runManager.computeGoldOnWin(engine);
             const roundGold = runManager.getCurrentEncounter()?.goldReward || 0;
 
+            // --- Collect item IDs equipped on white pieces for winrate tracking ---
+            const equippedIds = [];
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = engine.board[r][c];
+                    if (p && p.color === 'white' && p instanceof PieceEntity) {
+                        p.getItems().forEach(it => { if (it) equippedIds.push(it.id); });
+                    }
+                }
+            }
+            ItemStats.recordWin(equippedIds);
+
             // Return all equipped items from player pieces back to stash
             runManager.collectItemsFromBoard(engine);
 
@@ -1607,6 +1686,18 @@
                 showGameOverModal('⚔️ ' + window.t('gameover.round.win.title'), text, true);
             }
         } else if (isRoguelikeMode && engine.gameResult === 'black') {
+            // --- Record loss for all equipped items ---
+            const equippedIds = [];
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = engine.board[r][c];
+                    if (p && p.color === 'white' && p instanceof PieceEntity) {
+                        p.getItems().forEach(it => { if (it) equippedIds.push(it.id); });
+                    }
+                }
+            }
+            ItemStats.recordLoss(equippedIds);
+
             runManager.onRoundLose();
             showGameOverModal('💀 ' + window.t('gameover.title.lose'), window.t('gameover.run.lose'), false);
         } else {
@@ -1619,11 +1710,13 @@
         const titleEl = document.getElementById('gameover-title');
         const textEl = document.getElementById('gameover-text');
         const btnPlayAgain = document.getElementById('btn-play-again');
+        const btnToMenu = document.getElementById('btn-to-menu');
 
         icon.textContent = isShopTransition ? '🪙' : (engine.gameResult === 'white' ? '🏆' : '💀');
         titleEl.textContent = title;
         textEl.textContent = text;
-        btnPlayAgain.textContent = isShopTransition ? window.t('gameover.btn.shop') : window.t('gameover.btn.menu');
+        
+        btnPlayAgain.textContent = isShopTransition ? window.t('gameover.btn.shop') : window.t('gameover.btn.restart');
 
         // Replace button to clear old listeners
         const newBtn = btnPlayAgain.cloneNode(true);
@@ -1633,8 +1726,16 @@
             if (isShopTransition) {
                 openShop();
             } else {
-                showScreen('menu');
+                startNewRun(); // Restart roguelike run
             }
+        });
+        
+        // Setup menu button
+        const newMenuBtn = btnToMenu.cloneNode(true);
+        btnToMenu.replaceWith(newMenuBtn);
+        newMenuBtn.addEventListener('click', () => {
+            modalGameover.classList.remove('active');
+            showScreen('menu');
         });
 
         setTimeout(() => modalGameover.classList.add('active'), 500);
@@ -1644,18 +1745,44 @@
         const icon = document.getElementById('gameover-icon');
         const title = document.getElementById('gameover-title');
         const text = document.getElementById('gameover-text');
+        const btnPlayAgain = document.getElementById('btn-play-again');
+        const btnToMenu = document.getElementById('btn-to-menu');
 
         if (engine.gameResult === 'white') {
             icon.textContent = '🏆'; title.textContent = window.t('gameover.title.win');
             text.textContent = window.t('gameover.text.win');
         } else if (engine.gameResult === 'black') {
-            icon.textContent = '😔'; title.textContent = window.t('gameover.title.lose');
+            icon.textContent = '💀'; title.textContent = window.t('gameover.title.lose');
             text.textContent = window.t('gameover.text.lose');
         } else {
             icon.textContent = '🤝'; title.textContent = window.t('gameover.title.draw');
             text.textContent = engine.gameResultReason === 'stalemate' ? window.t('gameover.text.stalemate') :
                 engine.gameResultReason === '50-move rule' ? window.t('gameover.text.50move') : window.t('gameover.text.material');
         }
+
+        btnPlayAgain.textContent = window.t('gameover.btn.restart');
+
+        const newBtn = btnPlayAgain.cloneNode(true);
+        btnPlayAgain.replaceWith(newBtn);
+        newBtn.addEventListener('click', () => {
+            modalGameover.classList.remove('active');
+            if (isCreativeMode) {
+                document.getElementById('btn-creative').click();
+            } else if (isMirrorMode) {
+                document.getElementById('btn-mirror-match').click();
+            } else if (isPvP) {
+                document.getElementById('btn-pvp').click();
+            } else {
+                showScreen('menu');
+            }
+        });
+
+        const newMenuBtn = btnToMenu.cloneNode(true);
+        btnToMenu.replaceWith(newMenuBtn);
+        newMenuBtn.addEventListener('click', () => {
+            modalGameover.classList.remove('active');
+            showScreen('menu');
+        });
 
         setTimeout(() => modalGameover.classList.add('active'), 500);
     }

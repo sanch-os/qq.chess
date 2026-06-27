@@ -2,19 +2,23 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <meta name="description" content="Шахматы с произвольной расстановкой фигур и ИИ-противником">
     <title>Шахматы — Свободная расстановка</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/mobile-drag-drop/default.css">
+    <link rel="stylesheet" href="style.css?v=2">
+    <script src="https://unpkg.com/mobile-drag-drop/index.min.js"></script>
+    <script src="https://unpkg.com/mobile-drag-drop/scroll-behaviour.min.js"></script>
     <script src="locales.js"></script>
 </head>
 <body>
     <!-- ===== MAIN MENU SCREEN ===== -->
     <div id="screen-menu" class="screen active">
         <div class="menu-bg-pieces" aria-hidden="true"></div>
+        <button id="btn-settings" class="btn btn-icon-only" style="position: absolute; top: 20px; right: 20px; font-size: 1.5rem; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 50%; width: 45px; height: 45px; cursor: pointer; transition: all 0.2s;" title="Settings">⚙️</button>
         <div class="menu-container">
             <h1 class="menu-title">
                 <span class="title-icon">♚</span>
@@ -36,8 +40,8 @@
                     <span class="btn-icon">&#127984;</span> <span data-i18n="menu.run">Начать забег (Roguelike)</span>
                 </button>
                 <div style="display:flex; gap:10px; margin-bottom:10px;">
-                    <button id="btn-new-game" class="btn btn-secondary" style="flex:1;">
-                        <span class="btn-icon">&#9823;</span> <span data-i18n="menu.free">Свободная</span>
+                    <button id="btn-mirror-match" class="btn btn-secondary" style="flex:1;">
+                        <span class="btn-icon">🪞</span> <span data-i18n="menu.mirror">Зеркальный бой</span>
                     </button>
                     <button id="btn-creative" class="btn btn-secondary" style="flex:1; background: linear-gradient(135deg, rgba(157,147,250,0.15), rgba(240,192,72,0.15)); border-color: rgba(157,147,250,0.4);">
                         <span class="btn-icon">&#127912;</span> <span data-i18n="menu.creative">Творческий</span>
@@ -243,6 +247,38 @@
         </div>
     </div>
 
+    <!-- Surrender Confirm Modal -->
+    <div id="modal-surrender" class="modal-overlay">
+        <div class="modal glass-panel" style="max-width: 380px; text-align: center;">
+            <div class="modal-icon" style="font-size: 2.5rem;">🏳️</div>
+            <h2 class="modal-title" style="margin-bottom: 8px;" data-i18n="surrender.title">Сдаться?</h2>
+            <p class="modal-text" data-i18n="surrender.text">Вы уверены? Это засчитается как поражение.</p>
+            <div class="modal-buttons" style="margin-top: 20px;">
+                <button id="btn-surrender-confirm" class="btn btn-danger">🏳️ <span data-i18n="surrender.confirm">Сдаться</span></button>
+                <button id="btn-surrender-cancel" class="btn btn-outline" data-i18n="surrender.cancel">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== SETTINGS MODAL ===== -->
+    <div id="modal-settings" class="modal-overlay">
+        <div class="modal glass-panel" style="max-width: 400px; text-align: center;">
+            <h2 class="modal-title" style="margin-bottom: 20px;" data-i18n="settings.title">Настройки</h2>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+                <span data-i18n="settings.tutorial" style="font-size: 1.1rem;">Обучение</span>
+                <label class="switch">
+                    <input type="checkbox" id="setting-tutorial-toggle" checked>
+                    <span class="slider round"></span>
+                </label>
+            </div>
+
+            <div class="modal-buttons">
+                <button id="btn-settings-close" class="btn btn-primary" style="width: 100%;" data-i18n="settings.close">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Promotion Modal -->
     <div id="modal-promotion" class="modal-overlay">
         <div class="modal glass-panel promotion-modal">
@@ -309,12 +345,14 @@
         </div>
     </div>
 
-    <script src="piece-entity.js"></script>
-    <script src="items-db.js"></script>
-    <script src="encounters.js"></script>
-    <script src="run-manager.js"></script>
-    <script src="chess-engine.js"></script>
-    <script src="chess-ai.js"></script>
-    <script src="app.js"></script>
+    <script src="piece-entity.js?v=3"></script>
+    <script src="items-db.js?v=3"></script>
+    <script src="encounters.js?v=3"></script>
+    <script src="run-manager.js?v=3"></script>
+    <script src="chess-engine.js?v=3"></script>
+    <script src="chess-ai.js?v=3"></script>
+    <script src="item-stats.js?v=3"></script>
+    <script src="pieces-svg.js?v=3"></script>
+    <script src="app.js?v=3"></script>
 </body>
 </html>

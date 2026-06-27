@@ -5,6 +5,7 @@ window.i18n = {
         'menu.subtitle': 'Расставь фигуры. Обыграй машину.',
         'menu.run': 'Начать забег (Roguelike)',
         'menu.free': 'Свободная',
+        'menu.mirror': 'Зеркальный бой',
         'menu.creative': 'Творческий',
         'menu.editor': 'Редактор',
         'menu.difficulty': 'Сложность ИИ',
@@ -76,6 +77,7 @@ window.i18n = {
         'gameover.text.material': 'Недостаточно материала',
         'gameover.btn.shop': '🛒 В магазин',
         'gameover.btn.menu': '🏠 В меню',
+        'gameover.btn.restart': '🔄 Заново',
         'gameover.run.win.title': 'Победа в забеге!',
         'gameover.run.win.text': 'Вы одолели всех врагов! Золото: {gold} 🪙',
         'gameover.round.win.title': 'Победа в раунде!',
@@ -111,7 +113,15 @@ window.i18n = {
         'lang.title': 'Язык / Language',
         'lang.ru': '🇷🇺 Русский',
         'lang.en': '🇬🇧 English',
-        'lang.es': '🇪🇸 Español'
+        'lang.es': '🇪🇸 Español',
+
+        'surrender.title': 'Сдаться?',
+        'surrender.text': 'Вы уверены? Это засчитается как поражение.',
+        'surrender.confirm': 'Сдаться',
+        'surrender.cancel': 'Отмена',
+        'settings.title': 'Настройки',
+        'settings.tutorial': 'Обучение',
+        'settings.close': 'Закрыть',
     },
 
     en: {
@@ -120,6 +130,7 @@ window.i18n = {
         'menu.subtitle': 'Place your pieces. Beat the machine.',
         'menu.run': 'Start Run (Roguelike)',
         'menu.free': 'Free Play',
+        'menu.mirror': 'Mirror Match',
         'menu.creative': 'Creative Mode',
         'menu.editor': 'Editor',
         'menu.difficulty': 'AI Difficulty',
@@ -186,6 +197,7 @@ window.i18n = {
         'gameover.text.material': 'Insufficient material',
         'gameover.btn.shop': '🛒 To Shop',
         'gameover.btn.menu': '🏠 Main Menu',
+        'gameover.btn.restart': '🔄 Restart',
         'gameover.run.win.title': 'Run Victory!',
         'gameover.run.win.text': 'You defeated all enemies! Gold: {gold} 🪙',
         'gameover.round.win.title': 'Round Won!',
@@ -218,7 +230,15 @@ window.i18n = {
         'lang.title': 'Language / Язык',
         'lang.ru': '🇷🇺 Russian',
         'lang.en': '🇬🇧 English',
-        'lang.es': '🇪🇸 Spanish'
+        'lang.es': '🇪🇸 Spanish',
+
+        'surrender.title': 'Surrender?',
+        'surrender.text': 'Are you sure? This will count as a defeat.',
+        'surrender.confirm': 'Surrender',
+        'surrender.cancel': 'Cancel',
+        'settings.title': 'Settings',
+        'settings.tutorial': 'Tutorial',
+        'settings.close': 'Close',
     },
 
     es: {
@@ -227,6 +247,7 @@ window.i18n = {
         'menu.subtitle': 'Coloca tus piezas. Vence a la máquina.',
         'menu.run': 'Iniciar Carrera (Roguelike)',
         'menu.free': 'Juego Libre',
+        'menu.mirror': 'Partida Espejo',
         'menu.creative': 'Modo Creativo',
         'menu.editor': 'Editor',
         'menu.difficulty': 'Dificultad de la IA',
@@ -292,7 +313,8 @@ window.i18n = {
         'gameover.text.50move': 'Regla de 50 mov.',
         'gameover.text.material': 'Material insuficiente',
         'gameover.btn.shop': '🛒 A la Tienda',
-        'gameover.btn.menu': '🏠 Menú Principal',
+        'gameover.btn.menu': '🏠 Menu Principal',
+        'gameover.btn.restart': '🔄 Reiniciar',
         'gameover.run.win.title': '¡Victoria de la Carrera!',
         'gameover.run.win.text': '¡Derrotaste a todos los enemigos! Oro: {gold} 🪙',
         'gameover.round.win.title': '¡Ronda Ganada!',
@@ -325,7 +347,15 @@ window.i18n = {
         'lang.title': 'Idioma / Language',
         'lang.ru': '🇷🇺 Ruso',
         'lang.en': '🇬🇧 Inglés',
-        'lang.es': '🇪🇸 Español'
+        'lang.es': '🇪🇸 Español',
+
+        'surrender.title': '¿Rendirse?',
+        'surrender.text': '¿Estás seguro? Esto contará como derrota.',
+        'surrender.confirm': 'Rendirse',
+        'surrender.cancel': 'Cancelar',
+        'settings.title': 'Ajustes',
+        'settings.tutorial': 'Tutorial',
+        'settings.close': 'Cerrar',
     }
 };
 
