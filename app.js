@@ -352,22 +352,40 @@
     function renderStashSetup() {
         if (!playerStashSetupEl) return;
         playerStashSetupEl.innerHTML = '';
-        // runManager.playerItems is the stash (items not yet equipped)
-        runManager.playerItems.forEach((item, idx) => {
-            if (!item) return;
-            const tName = window.t_item(item, 'name');
-            const tDesc = window.t_item(item, 'description');
-            const el = document.createElement('div');
-            el.className = `stash-item rarity-${item.rarity || 'common'}`;
-            const infBadge = isCreativeMode ? `<div class="item-badge" style="background:rgba(0,0,0,0.8); right:0; top:0;">∞</div>` : '';
-            el.innerHTML = `<div class="item-icon">${item.icon || '📦'}</div>${infBadge}
-                            <div class="item-tooltip"><strong>${tName}</strong><br>${tDesc}</div>`;
-            el.setAttribute('draggable', 'true');
-            el.dataset.itemIndex = idx;
-            el.addEventListener('dragstart', onStashDragStart);
-            el.addEventListener('dragend', onDragEnd);
-            playerStashSetupEl.appendChild(el);
-        });
+
+        if (isCreativeMode) {
+            // In creative mode — show ALL items from catalog, infinite supply
+            Object.values(ITEMS_DB).forEach((item) => {
+                const tName = window.t_item(item, 'name');
+                const tDesc = window.t_item(item, 'description');
+                const el = document.createElement('div');
+                el.className = `stash-item rarity-${item.rarity || 'common'}`;
+                el.innerHTML = `<div class="item-icon">${item.icon || '📦'}</div>
+                                <div class="item-badge" style="background:rgba(80,0,200,0.85); right:0; top:0;">∞</div>
+                                <div class="item-tooltip"><strong>${tName}</strong><br>${tDesc}</div>`;
+                el.setAttribute('draggable', 'true');
+                el.dataset.itemId = item.id; // use item ID, not index
+                el.addEventListener('dragstart', onStashDragStart);
+                el.addEventListener('dragend', onDragEnd);
+                playerStashSetupEl.appendChild(el);
+            });
+        } else {
+            // Normal mode — show player's stash
+            runManager.playerItems.forEach((item, idx) => {
+                if (!item) return;
+                const tName = window.t_item(item, 'name');
+                const tDesc = window.t_item(item, 'description');
+                const el = document.createElement('div');
+                el.className = `stash-item rarity-${item.rarity || 'common'}`;
+                el.innerHTML = `<div class="item-icon">${item.icon || '📦'}</div>
+                                <div class="item-tooltip"><strong>${tName}</strong><br>${tDesc}</div>`;
+                el.setAttribute('draggable', 'true');
+                el.dataset.itemIndex = idx;
+                el.addEventListener('dragstart', onStashDragStart);
+                el.addEventListener('dragend', onDragEnd);
+                playerStashSetupEl.appendChild(el);
+            });
+        }
     }
 
     function renderIngameStash() {
@@ -417,11 +435,21 @@
     function onStashDragStart(e) {
         const el = e.target.closest('.stash-item');
         if (!el) return;
-        const idx = parseInt(el.dataset.itemIndex);
-        const item = runManager.playerItems[idx];
-        if (!item) { e.preventDefault(); return; }
 
-        draggedItem = { itemIndex: idx };
+        let item;
+        if (isCreativeMode) {
+            // Creative: use item ID to clone fresh from catalog
+            const itemId = el.dataset.itemId;
+            item = ITEMS_DB[itemId];
+            if (!item) { e.preventDefault(); return; }
+            draggedItem = { itemId }; // store ID, not index
+        } else {
+            const idx = parseInt(el.dataset.itemIndex);
+            item = runManager.playerItems[idx];
+            if (!item) { e.preventDefault(); return; }
+            draggedItem = { itemIndex: idx };
+        }
+
         draggedPiece = null;
         createDragGhost(item.icon || '📦');
         el.classList.add('dragging');
@@ -504,7 +532,22 @@
             // Equip item to piece
             const setupColor = isBlackSetup ? 'black' : 'white';
             if (piece && piece.color === setupColor && piece instanceof PieceEntity) {
-                runManager.equipItemToPiece(draggedItem.itemIndex, piece, isCreativeMode);
+                if (isCreativeMode && draggedItem.itemId) {
+                    // Creative mode: clone fresh item from catalog, bypass stash
+                    const catalogItem = ITEMS_DB[draggedItem.itemId];
+                    if (catalogItem) {
+                        if (!catalogItem.allowedPieces.includes('all') && !catalogItem.allowedPieces.includes(piece.type)) {
+                            // not allowed for this piece type — skip
+                        } else {
+                            const slot = piece.getEmptySlot();
+                            if (slot !== -1) {
+                                piece.setItem(slot, { ...catalogItem, modifiers: { ...catalogItem.modifiers } });
+                            }
+                        }
+                    }
+                } else {
+                    runManager.equipItemToPiece(draggedItem.itemIndex, piece, false);
+                }
                 renderStashSetup();
                 renderBoard(boardSetup);
             }
@@ -1249,7 +1292,8 @@
                     <div class="slot-label">${window.t('piece.inv.slot')} ${i + 1}</div>
                     <div class="slot-item-icon">${item.icon || '📦'}</div>
                     <div class="slot-item-name">${window.t_item(item, 'name')}</div>
-                    ${!isReadOnly ? '<button class="slot-unequip" title="Снять">✕</button>' : ''}
+                    <div class="slot-item-desc" style="font-size:0.7em; color:var(--text-muted); text-align:center; margin-top:2px; line-height:1.2;">${window.t_item(item, 'description')}</div>
+                    ${!isReadOnly ? '<button class="slot-unequip" title="×">✕</button>' : ''}
                 `;
                 if (!isReadOnly) {
                     const unequipBtn = slotEl.querySelector('.slot-unequip');
@@ -1279,19 +1323,22 @@
         const emptyMsg = document.getElementById('piece-inv-stash-empty');
         listEl.innerHTML = '';
 
-        const stashItems = runManager.playerItems;
         const hasEmptySlot = piece.getEmptySlot() !== -1;
 
-        if (!stashItems || stashItems.length === 0) {
+        // In creative mode — show full catalog; else show player stash
+        const sourceItems = isCreativeMode
+            ? Object.values(ITEMS_DB).map((item, idx) => ({ item, idx: item.id }))
+            : runManager.playerItems.map((item, idx) => ({ item, idx }));
+
+        const visibleItems = sourceItems.filter(x => x.item);
+
+        if (visibleItems.length === 0) {
             emptyMsg.classList.remove('hidden');
             return;
         }
         emptyMsg.classList.add('hidden');
 
-        stashItems.forEach((item, idx) => {
-            if (!item) return;
-
-            // Check if item is compatible with this piece
+        visibleItems.forEach(({ item, idx }) => {
             const allowed = item.allowedPieces || ['all'];
             const isAllowed = allowed.includes('all') || allowed.includes(piece.type);
             const canEquip = isAllowed && hasEmptySlot;
@@ -1305,21 +1352,41 @@
 
             const tName = window.t_item(item, 'name');
             const tDesc = window.t_item(item, 'description');
-            
+            const infBadge = isCreativeMode ? `<span style="color:#a78bfa;font-size:0.75em;"> ∞</span>` : '';
+
             el.innerHTML = `
                 <div class="stash-item-icon-wrap">${item.icon || '📦'}</div>
-                <div class="stash-item-info" style="font-size:0.7em; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; padding:0 2px;">${tName}</div>
+                <div class="stash-item-info" style="font-size:0.7em; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; padding:0 2px;">${tName}${infBadge}</div>
                 <div class="item-tooltip"><strong>${tName}</strong><br>${tDesc}<br><em style="color:#9d93fa;">${canEquip ? window.t('piece.inv.click_equip') : (!isAllowed ? window.t('piece.inv.not_allowed') : window.t('piece.inv.no_slots'))}</em></div>
             `;
 
             if (canEquip) {
                 el.addEventListener('click', () => {
-                    equipItemFromStash(idx);
+                    isCreativeMode ? equipItemFromCatalog(item.id) : equipItemFromStash(idx);
                 });
             }
 
             listEl.appendChild(el);
         });
+    }
+
+    // Equip item from catalog (creative mode - clone fresh)
+    function equipItemFromCatalog(itemId) {
+        if (!pieceInvTarget) return;
+        const piece = engine.getPiece(pieceInvTarget.row, pieceInvTarget.col);
+        if (!piece || !(piece instanceof PieceEntity)) return;
+
+        const slot = piece.getEmptySlot();
+        if (slot === -1) return;
+
+        const catalogItem = ITEMS_DB[itemId];
+        if (!catalogItem) return;
+
+        piece.setItem(slot, { ...catalogItem, modifiers: { ...catalogItem.modifiers } });
+
+        document.getElementById('piece-inv-subtitle').textContent = window.t('piece.inv.subtitle.slots').replace('{count}', piece.getItems().length);
+        renderPieceInventorySlots(piece);
+        renderPieceInventoryStash(piece);
     }
 
     function equipItemFromStash(stashIndex) {
@@ -1349,7 +1416,8 @@
         if (!piece || !(piece instanceof PieceEntity)) return;
 
         const item = piece.removeItem(slotIndex);
-        if (item) {
+        if (item && !isCreativeMode) {
+            // Only return to stash in non-creative mode
             runManager.playerItems.push(item);
         }
 
@@ -1364,19 +1432,23 @@
         const piece = engine.getPiece(row, col);
         if (!piece) return;
 
-        // Return all items to stash
-        if (piece instanceof PieceEntity) {
+        // Return items to stash only in normal mode
+        if (piece instanceof PieceEntity && !isCreativeMode) {
             piece.getItems().forEach(item => {
                 runManager.playerItems.push(item);
             });
+        }
+        if (piece instanceof PieceEntity) {
             piece.items = [null, null, null];
             piece.shield = 0;
         }
 
         // Return piece to inventory
         engine.removePiece(row, col);
-        const invItem = inventory.find(i => i.type === piece.type);
-        if (invItem) invItem.remaining++;
+        if (!isCreativeMode) {
+            const invItem = inventory.find(i => i.type === piece.type);
+            if (invItem) invItem.remaining++;
+        }
 
         closePieceInventory();
         renderInventory();
@@ -1726,7 +1798,7 @@
             if (isShopTransition) {
                 openShop();
             } else {
-                startNewRun(); // Restart roguelike run
+                document.getElementById('btn-new-run').click();
             }
         });
         
