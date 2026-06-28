@@ -123,6 +123,9 @@
         Object.values(screens).forEach(s => s.classList.remove('active'));
         if (screens[name]) screens[name].classList.add('active');
         currentScreen = name;
+        if (window.Tutorial && window.Tutorial.onScreenChange) {
+            window.Tutorial.onScreenChange(name);
+        }
     }
 
     // --- Build Board ---
@@ -508,8 +511,8 @@
             }
         } else if (draggedPiece) {
             const validZone = isBlackSetup ? (r <= 1) : (r >= 6);
-            if (validZone && !piece) cell.classList.add('drop-valid');
-            else if (!validZone) cell.classList.add('drop-invalid');
+            if (validZone) cell.classList.add('drop-valid');
+            else cell.classList.add('drop-invalid');
         }
     }
 
@@ -554,12 +557,38 @@
         } else if (draggedPiece) {
             const validZone = isBlackSetup ? (r <= 1) : (r >= 6);
             if (!validZone) return;
-            if (piece) return;
-
             const setupColor = isBlackSetup ? 'black' : 'white';
+
+            // If dropping from board onto the EXACT SAME cell, do nothing
+            if (draggedPiece.source === 'board' && draggedPiece.row === r && draggedPiece.col === c) return;
+
+            // Handle swapping: if a piece already exists, return it to inventory
+            if (piece) {
+                if (piece.color !== setupColor) return;
+                
+                // Return items to stash
+                if (piece instanceof PieceEntity && !isCreativeMode) {
+                    piece.getItems().forEach(item => {
+                        runManager.playerItems.push(item);
+                    });
+                }
+                
+                // Return piece to inventory
+                if (!isCreativeMode) {
+                    const invItem = inventory.find(i => i.type === piece.type);
+                    if (invItem) invItem.remaining++;
+                }
+                engine.removePiece(r, c);
+            }
+
             if (draggedPiece.source === 'inventory') {
                 const invItem = inventory[draggedPiece.index];
-                if (!invItem || (!isCreativeMode && invItem.remaining <= 0)) return;
+                if (!invItem || (!isCreativeMode && invItem.remaining <= 0)) {
+                    // Not enough pieces, but wait: if we swapped, maybe we just freed it up!
+                    // E.g. we drag a Queen over a Queen. The old Queen was returned, remaining++ just happened.
+                    // So we must check again.
+                    if (!isCreativeMode && invItem.remaining <= 0) return;
+                }
                 engine.board[r][c] = new PieceEntity(draggedPiece.type, setupColor);
                 if (!isCreativeMode) invItem.remaining--;
             } else if (draggedPiece.source === 'board') {
@@ -982,8 +1011,26 @@
         });
         
         let tutorialEnabled = true;
-        document.getElementById('setting-tutorial-toggle').addEventListener('change', (e) => {
+        const tutToggle = document.getElementById('setting-tutorial-toggle');
+        // Initialize based on saved preference (or default true)
+        const savedTutState = localStorage.getItem('chess_tut_enabled');
+        if (savedTutState !== null) {
+            tutorialEnabled = savedTutState === '1';
+            tutToggle.checked = tutorialEnabled;
+        }
+
+        tutToggle.addEventListener('change', (e) => {
             tutorialEnabled = e.target.checked;
+            localStorage.setItem('chess_tut_enabled', tutorialEnabled ? '1' : '0');
+        });
+
+        // Add manual start tutorial button listener
+        document.getElementById('btn-start-tutorial').addEventListener('click', () => {
+            modalSettings.classList.remove('active');
+            if (window.Tutorial) {
+                window.Tutorial.reset();
+                window.Tutorial.start();
+            }
         });
 
         // Close on backdrop click

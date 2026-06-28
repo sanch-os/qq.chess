@@ -79,6 +79,9 @@ const ITEMS_DB = {
         tags: ['knight', 'jump'],
         allowedPieces: ['knight'],
         modifiers: {},
+        synergy: {
+            3: { modifiers: { moveAnywhere: true } }
+        },
         extraDirections: [],
         extraKnightOffsets: [[-3,-1],[-3,1],[3,-1],[3,1],[-1,-3],[-1,3],[1,-3],[1,3]],
     },

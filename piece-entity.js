@@ -110,23 +110,54 @@ class PieceEntity {
             lifesteal: false,          // Capturing heals 1 shield charge
         };
 
+        // Count identical items
+        const itemCounts = {};
+        const uniqueItems = [];
         for (const item of this.items) {
             if (!item) continue;
+            if (!itemCounts[item.id]) {
+                itemCounts[item.id] = 0;
+                uniqueItems.push(item);
+            }
+            itemCounts[item.id]++;
+        }
+
+        for (const item of uniqueItems) {
+            const count = itemCounts[item.id];
             const mods = item.modifiers || {};
+            
+            // Apply base modifiers (numeric values scale with count, booleans apply if count > 0)
             for (const [key, value] of Object.entries(mods)) {
-                if (key === 'extraDirections' || key === 'extraKnightOffsets') continue; // handled below
+                if (key === 'extraDirections' || key === 'extraKnightOffsets') continue;
                 if (typeof value === 'number') {
-                    stats[key] = (stats[key] || 0) + value;
+                    stats[key] = (stats[key] || 0) + (value * count);
                 } else if (typeof value === 'boolean' && value) {
                     stats[key] = true;
                 }
             }
-            // Merge array modifiers from item root (not inside modifiers)
+            
+            // Apply extra directions/offsets (repeated `count` times so they don't break, though redundant for arrays, it's fine)
             if (item.extraDirections) {
-                stats.extraDirections.push(...item.extraDirections);
+                for (let i = 0; i < count; i++) stats.extraDirections.push(...item.extraDirections);
             }
             if (item.extraKnightOffsets) {
-                stats.extraKnightOffsets.push(...item.extraKnightOffsets);
+                for (let i = 0; i < count; i++) stats.extraKnightOffsets.push(...item.extraKnightOffsets);
+            }
+
+            // Apply Synergy bonuses (if defined for this specific count or lower)
+            if (item.synergy) {
+                for (let c = 2; c <= count; c++) {
+                    if (item.synergy[c]) {
+                        const synMods = item.synergy[c].modifiers || {};
+                        for (const [key, value] of Object.entries(synMods)) {
+                            if (typeof value === 'number') {
+                                stats[key] = (stats[key] || 0) + value;
+                            } else if (typeof value === 'boolean' && value) {
+                                stats[key] = true;
+                            }
+                        }
+                    }
+                }
             }
         }
 

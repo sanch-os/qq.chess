@@ -265,12 +265,15 @@
         <div class="modal glass-panel" style="max-width: 400px; text-align: center;">
             <h2 class="modal-title" style="margin-bottom: 20px;" data-i18n="settings.title">Настройки</h2>
             
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 8px;">
-                <span data-i18n="settings.tutorial" style="font-size: 1.1rem;">Обучение</span>
-                <label class="switch">
-                    <input type="checkbox" id="setting-tutorial-toggle" checked>
-                    <span class="slider round"></span>
-                </label>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 8px; flex-wrap: wrap; gap: 10px;">
+                <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                    <span data-i18n="settings.tutorial" style="font-size: 1.1rem;">Обучение</span>
+                    <label class="switch">
+                        <input type="checkbox" id="setting-tutorial-toggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <button id="btn-start-tutorial" data-i18n="settings.start_tutorial" style="width: 100%;">Запустить обучение</button>
             </div>
 
             <div class="modal-buttons">
@@ -353,6 +356,7 @@
     <script src="chess-ai.js?v=3"></script>
     <script src="item-stats.js?v=3"></script>
     <script src="pieces-svg.js?v=3"></script>
-    <script src="app.js?v=7"></script>
+    <script src="app.js?v=8"></script>
+    <script src="tutorial.js?v=1"></script>
 </body>
 </html>

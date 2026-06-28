@@ -121,6 +121,7 @@ window.i18n = {
         'surrender.cancel': 'Отмена',
         'settings.title': 'Настройки',
         'settings.tutorial': 'Обучение',
+        'settings.start_tutorial': 'Запустить обучение',
         'settings.close': 'Закрыть',
     },
 
@@ -238,6 +239,7 @@ window.i18n = {
         'surrender.cancel': 'Cancel',
         'settings.title': 'Settings',
         'settings.tutorial': 'Tutorial',
+        'settings.start_tutorial': 'Start Tutorial',
         'settings.close': 'Close',
     },
 
@@ -355,6 +357,7 @@ window.i18n = {
         'surrender.cancel': 'Cancelar',
         'settings.title': 'Ajustes',
         'settings.tutorial': 'Tutorial',
+        'settings.start_tutorial': 'Iniciar Tutorial',
         'settings.close': 'Cerrar',
     }
 };
