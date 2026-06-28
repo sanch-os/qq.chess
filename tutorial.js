@@ -194,7 +194,7 @@
 
         const rect = el.getBoundingClientRect();
         const gap = 18;
-        const W = 320;
+        const W = Math.min(320, window.innerWidth - 24);
 
         let top, left;
         switch (position) {
