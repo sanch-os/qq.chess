@@ -182,19 +182,18 @@
         tooltip.className = 'tut-tooltip';
         tooltip.classList.add('tut-pos-' + (position || 'center'));
 
+        const W = Math.min(320, window.innerWidth - 24);
+        tooltip.style.cssText = `position: fixed; width: ${W}px;`;
+
         if (!el || position === 'center') {
-            tooltip.style.cssText = `
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-            `;
+            const H = tooltip.offsetHeight || 180;
+            tooltip.style.top = Math.max(12, (window.innerHeight / 2 - H / 2)) + 'px';
+            tooltip.style.left = (window.innerWidth / 2 - W / 2) + 'px';
             return;
         }
 
         const rect = el.getBoundingClientRect();
         const gap = 18;
-        const W = Math.min(320, window.innerWidth - 24);
 
         let top, left;
         switch (position) {
