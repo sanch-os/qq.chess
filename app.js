@@ -182,6 +182,7 @@
                 cell.classList.add('has-piece');
                 const pieceEl = document.createElement('span');
                 pieceEl.className = 'piece';
+                if (piece.isBoss) pieceEl.classList.add('piece-boss');
                 // Use SVG if available, otherwise fall back to unicode symbol
                 const svgContent = getPieceSVG(piece.color, piece.type);
                 if (svgContent && svgContent.startsWith('<svg')) {
@@ -259,56 +260,7 @@
         }
     }
 
-    function onGameCellClick(e) {
-        if (isAIThinking || engine.gameOver) return;
-        const currentColor = engine.currentTurn;
-
-        // In PvP both colors can click; in PvBot only white
-        if (!isPvP && currentColor !== 'white') return;
-
-        const cell = e.target.closest('.cell');
-        if (!cell) return;
-        const r = parseInt(cell.dataset.row);
-        const c = parseInt(cell.dataset.col);
-        const piece = engine.getPiece(r, c);
-
-        if (selectedCell) {
-            const move = legalMovesForSelected.find(m => m.to.row === r && m.to.col === c);
-            if (move) {
-                if (move.promotion) {
-                    showPromotionModal(selectedCell.row, selectedCell.col, r, c);
-                    return;
-                }
-                executePlayerMove(selectedCell.row, selectedCell.col, r, c);
-                return;
-            }
-            if (piece && piece.color === currentColor) {
-                // If clicking the currently selected piece, open its inventory
-                if (selectedCell.row === r && selectedCell.col === c) {
-                    openPieceInventory(r, c);
-                    deselectPiece();
-                    return;
-                }
-                selectPiece(r, c);
-                return;
-            }
-            deselectPiece();
-            
-            // If clicked an enemy piece while not a move target, open its inventory
-            if (piece && piece.color !== currentColor) {
-                openPieceInventory(r, c);
-            }
-            return;
-        }
-
-        if (piece) {
-            if (piece.color === currentColor) {
-                selectPiece(r, c);
-            } else {
-                openPieceInventory(r, c);
-            }
-        }
-    }
+    // onGameCellClick is defined below near game logic (line ~1516)
 
     function getCell(container, row, col) {
         return container.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
@@ -995,11 +947,7 @@
         document.getElementById('btn-surrender-cancel').addEventListener('click', () => {
             modalSurrender.classList.remove('active');
         });
-        document.getElementById('btn-surrender-confirm').addEventListener('click', () => {
-            modalSurrender.classList.remove('active');
-            engine.gameResult = 'black'; // you surrender, black wins
-            handleGameOver();
-        });
+        // NOTE: btn-surrender-confirm handler is below (the one with gameOver guard)
 
         // Settings Modal
         const modalSettings = document.getElementById('modal-settings');
@@ -1198,10 +1146,35 @@
             document.getElementById('run-gold').textContent = `${runManager.gold} 🪙`;
             const roundNum = runManager.currentRound + 1;
             const totalRounds = runManager.encounters.length;
+            const opponentNameEl = document.querySelector('.player-card.opponent .player-name');
+            const opponentAvatarEl = document.querySelector('.player-card.opponent .player-avatar');
+
             if (encounter.isBoss) {
-                document.getElementById('run-round').textContent = `⚔️ ${window.t('run.boss')} ${roundNum}/${totalRounds}: ${window.t_item(encounter, 'bossName') || window.t_item(encounter, 'name')}`;
+                const bName = window.t_item(encounter, 'bossName') || window.t_item(encounter, 'name');
+                document.getElementById('run-round').textContent = `💀 ${window.t('run.boss')} ${roundNum}/${totalRounds}: ${bName}`;
+                if (opponentNameEl) {
+                    opponentNameEl.textContent = bName;
+                    opponentNameEl.style.color = 'var(--danger)';
+                    opponentNameEl.style.textShadow = '0 0 5px var(--danger)';
+                }
+                if (opponentAvatarEl) {
+                    opponentAvatarEl.textContent = '💀';
+                    opponentAvatarEl.style.color = 'var(--danger)';
+                    opponentAvatarEl.style.textShadow = '0 0 8px var(--danger)';
+                }
             } else {
-                document.getElementById('run-round').textContent = `${window.t('run.round')} ${roundNum}/${totalRounds}: ${window.t_item(encounter, 'name')}`;
+                const eName = window.t_item(encounter, 'name');
+                document.getElementById('run-round').textContent = `${window.t('run.round')} ${roundNum}/${totalRounds}: ${eName}`;
+                if (opponentNameEl) {
+                    opponentNameEl.textContent = eName;
+                    opponentNameEl.style.color = '';
+                    opponentNameEl.style.textShadow = '';
+                }
+                if (opponentAvatarEl) {
+                    opponentAvatarEl.textContent = '♚';
+                    opponentAvatarEl.style.color = '';
+                    opponentAvatarEl.style.textShadow = '';
+                }
             }
             document.getElementById('btn-undo').style.display = 'none';
 
@@ -1227,6 +1200,22 @@
             document.getElementById('btn-undo').style.display = 'block';
         }
 
+        // Reset opponent panel to default for non-roguelike modes
+        if (!isRoguelikeMode) {
+            const opponentNameEl = document.querySelector('.player-card.opponent .player-name');
+            const opponentAvatarEl = document.querySelector('.player-card.opponent .player-avatar');
+            if (opponentNameEl) {
+                opponentNameEl.textContent = isPvP ? window.t('game.player.black') : window.t('game.player.opponent');
+                opponentNameEl.style.color = '';
+                opponentNameEl.style.textShadow = '';
+            }
+            if (opponentAvatarEl) {
+                opponentAvatarEl.textContent = '♚';
+                opponentAvatarEl.style.color = '';
+                opponentAvatarEl.style.textShadow = '';
+            }
+        }
+
         // Castling rights
         engine.castlingRights = {
             white: { kingSide: false, queenSide: false },
@@ -1245,6 +1234,8 @@
         engine.fullMoveNumber = 1;
         engine.gameOver = false;
         engine.gameResult = null;
+        engine.gameResultReason = '';
+        if (engine.captureLog) engine.captureLog = [];
 
         capturedPieces = { white: [], black: [] };
         lastMove = null;
@@ -1286,8 +1277,17 @@
 
         // Header
         document.getElementById('piece-inv-icon').textContent = PIECE_SYMBOLS[piece.color]?.[piece.type] || '♟';
-        document.getElementById('piece-inv-title').textContent = window.t('piece.' + piece.type) || piece.type;
-        document.getElementById('piece-inv-subtitle').textContent = isReadOnly ? window.t('piece.inv.subtitle.equipped') : window.t('piece.inv.subtitle.slots').replace('{count}', piece.getItems().length);
+        if (piece.isBoss) {
+            document.getElementById('piece-inv-title').textContent = piece.bossName || window.t('piece.' + piece.type);
+            document.getElementById('piece-inv-title').style.color = 'var(--danger)';
+            document.getElementById('piece-inv-subtitle').textContent = piece.bossDescription || 'Boss';
+            document.getElementById('piece-inv-subtitle').style.color = 'var(--gold)';
+        } else {
+            document.getElementById('piece-inv-title').textContent = window.t('piece.' + piece.type) || piece.type;
+            document.getElementById('piece-inv-title').style.color = '';
+            document.getElementById('piece-inv-subtitle').textContent = isReadOnly ? window.t('piece.inv.subtitle.equipped') : window.t('piece.inv.subtitle.slots').replace('{count}', piece.getItems().length);
+            document.getElementById('piece-inv-subtitle').style.color = '';
+        }
 
         renderPieceInventorySlots(piece, isReadOnly);
         renderPieceInventoryStash(piece, isReadOnly);
@@ -1527,15 +1527,29 @@
                 return;
             }
             if (piece && piece.color === currentColor) {
+                // Click same selected piece => open inventory
+                if (selectedCell.row === r && selectedCell.col === c) {
+                    openPieceInventory(r, c);
+                    deselectPiece();
+                    return;
+                }
                 selectPiece(r, c);
                 return;
             }
             deselectPiece();
+            // Click enemy piece that is not a move target => open its info
+            if (piece && piece.color !== currentColor) {
+                openPieceInventory(r, c);
+            }
             return;
         }
 
-        if (piece && piece.color === currentColor) {
-            selectPiece(r, c);
+        if (piece) {
+            if (piece.color === currentColor) {
+                selectPiece(r, c);
+            } else {
+                openPieceInventory(r, c);
+            }
         }
     }
 
@@ -1890,7 +1904,8 @@
             } else if (isMirrorMode) {
                 document.getElementById('btn-mirror-match').click();
             } else if (isPvP) {
-                document.getElementById('btn-pvp').click();
+                // Restart PvP by going back to menu
+                showScreen('menu');
             } else {
                 showScreen('menu');
             }

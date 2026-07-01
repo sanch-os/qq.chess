@@ -4,17 +4,23 @@
 
 const ITEM_STATS_KEY = 'chess_item_stats';
 
+// In-memory cache to avoid repeated JSON parse/serialize on every call
+let _statsCache = null;
+
 const ItemStats = {
-    // Load stats from localStorage
+    // Load stats from localStorage (cached)
     load() {
+        if (_statsCache) return _statsCache;
         try {
             const raw = localStorage.getItem(ITEM_STATS_KEY);
-            return raw ? JSON.parse(raw) : {};
-        } catch (e) { return {}; }
+            _statsCache = raw ? JSON.parse(raw) : {};
+        } catch (e) { _statsCache = {}; }
+        return _statsCache;
     },
 
-    // Save stats to localStorage
+    // Save stats to localStorage and update cache
     save(stats) {
+        _statsCache = stats;
         try {
             localStorage.setItem(ITEM_STATS_KEY, JSON.stringify(stats));
         } catch (e) {}
@@ -51,13 +57,12 @@ const ItemStats = {
     },
 
     // Get winrate for a specific item (0–100%)
+    // Denominator is s.used (total runs equipped), not just wins+losses
     getWinrate(itemId) {
         const stats = this.load();
         const s = stats[itemId];
         if (!s || s.used === 0) return null;
-        const games = s.wins + s.losses;
-        if (games === 0) return null;
-        return Math.round((s.wins / games) * 100);
+        return Math.round((s.wins / s.used) * 100);
     },
 
     // Get all stats, sorted by usage

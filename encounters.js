@@ -69,7 +69,7 @@ const ENCOUNTERS = [
         goldReward: 180,
         enemySetup: 'standard',
         enemyItems: [
-            { pieceType: 'king',   pieceIndex: 0, itemId: 'kings_crown' },
+            { pieceType: 'king',   pieceIndex: 0, itemId: 'kings_crown', isBossPiece: true },
             { pieceType: 'queen',  pieceIndex: 0, itemId: 'sharp_blade' },
             { pieceType: 'rook',   pieceIndex: 0, itemId: 'wooden_shield' },
             { pieceType: 'rook',   pieceIndex: 1, itemId: 'diagonal_slide' },
@@ -159,7 +159,7 @@ const ENCOUNTERS = [
         enemySetup: 'standard',
         enemyItems: [
             // Чингисхан — король с усиленным ходом
-            { pieceType: 'king',   pieceIndex: 0, itemId: 'kings_crown' },
+            { pieceType: 'king',   pieceIndex: 0, itemId: 'kings_crown', isBossPiece: true },
             // Ханша — ферзь дальнобойный и неуязвимый
             { pieceType: 'queen',  pieceIndex: 0, itemId: 'omega_rune' },
             // Монгольская конница — усиленные кони
@@ -260,7 +260,7 @@ const ENCOUNTERS = [
         enemySetup: 'standard',
         enemyItems: [
             // Тёмный Лорд — непобедимый король
-            { pieceType: 'king',   pieceIndex: 0, itemId: 'kings_crown' },
+            { pieceType: 'king',   pieceIndex: 0, itemId: 'kings_crown', isBossPiece: true },
             // Тёмная ферзь с абсолютной мощью
             { pieceType: 'queen',  pieceIndex: 0, itemId: 'omega_rune' },
             // Бессмертные ладьи

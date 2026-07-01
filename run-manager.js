@@ -37,46 +37,13 @@ class RunManager {
         this.startingItemsGiven = true;
     }
 
-    // Build a procedural sequence of encounters for this run.
-    // Every 3rd slot (index 2, 5, 8...) is a random boss.
-    // Other slots are random non-boss encounters.
+    // Build a sequence of encounters for this run.
     _generateRunSequence() {
         const allEncounters = getEncounters();
-        const bossPool    = allEncounters.filter(e => e.isBoss);
-        const normalPool  = allEncounters.filter(e => !e.isBoss);
-
-        // Shuffle helpers
-        const shuffle = arr => arr.slice().sort(() => Math.random() - 0.5);
-
-        const shuffledBosses  = shuffle(bossPool);
-        const shuffledNormals = shuffle(normalPool);
-
-        // Always use 9 rounds (3 cycles of 3) — tweak as needed
-        const TOTAL_ROUNDS = 9;
-        this.encounters = [];
-        let bossIdx  = 0;
-        let normalIdx = 0;
-
-        for (let i = 0; i < TOTAL_ROUNDS; i++) {
-            if ((i + 1) % 3 === 0) {
-                // Boss slot — pick random boss (loop if exhausted)
-                const boss = shuffledBosses[bossIdx % shuffledBosses.length];
-                bossIdx++;
-                this.encounters.push({ ...boss });
-            } else {
-                // Normal slot — pick random normal (loop if exhausted)
-                const normal = shuffledNormals[normalIdx % shuffledNormals.length];
-                normalIdx++;
-                // Scale difficulty slightly with progress
-                const scale = Math.floor(i / 3);
-                this.encounters.push({
-                    ...normal,
-                    aiDepth: Math.min(4, (normal.aiDepth || 2) + scale),
-                    goldReward: (normal.goldReward || 60) + scale * 15,
-                });
-            }
-        }
-
+        
+        // We now use the exact sequential progression defined in encounters.js
+        this.encounters = allEncounters.map(e => ({ ...e }));
+        
         this.totalRounds = this.encounters.length;
     }
 
@@ -107,7 +74,7 @@ class RunManager {
             name: `${baseEncounter.name} (Loop ${loop + 1})`,
             aiDepth: Math.min(4, baseEncounter.aiDepth + Math.floor(loop / 2)),
             goldReward: baseEncounter.goldReward + (loop * 30),
-            enemyItems: [...baseEncounter.enemyItems, ...extraItems],
+            enemyItems: [...(baseEncounter.enemyItems || []), ...extraItems],
         };
     }
 
@@ -144,6 +111,11 @@ class RunManager {
                             const slot = piece.getEmptySlot();
                             if (slot !== -1) {
                                 piece.setItem(slot, { ...item });
+                            }
+                            if (itemDef.isBossPiece) {
+                                piece.isBoss = true;
+                                piece.bossName = encounter.bossName;
+                                piece.bossDescription = encounter.bossDescription;
                             }
                             matchCount = -999; // done
                             break;
@@ -225,9 +197,7 @@ class RunManager {
 
     // Recruit surviving enemy piece to player's army
     recruitPiece(type) {
-        if (type === 'king' || type === 'pawn') return; // Don't recruit enemy kings or pawns (pawns might be too weak/useless to recruit, or maybe we do?)
-        // Let's recruit pawns too, why not?
-        if (type === 'king') return;
+        if (type === 'king') return; // Never recruit enemy kings
         this.bonusPieces[type] = (this.bonusPieces[type] || 0) + 1;
     }
 

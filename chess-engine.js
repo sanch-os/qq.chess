@@ -27,6 +27,8 @@ class ChessEngine {
         this.gameResult = null;
         this.gameResultReason = '';
         this.captureLog = [];  // [{attacker, victim, round}]
+        // King position cache — updated in executeMove, avoids O(64) scan in hot paths
+        this._kingPos = { white: null, black: null };
     }
 
     createEmptyBoard() {
@@ -66,6 +68,9 @@ class ChessEngine {
         engine.gameResult = this.gameResult;
         engine.gameResultReason = this.gameResultReason;
         engine.moveHistory = [];
+        // Copy king position cache
+        engine._kingPos = { white: this._kingPos.white ? { ...this._kingPos.white } : null,
+                            black: this._kingPos.black ? { ...this._kingPos.black } : null };
         return engine;
     }
 
@@ -605,9 +610,11 @@ class ChessEngine {
     /* --- Move Validation & Execution --- */
 
     isLegalMove(move) {
+        const piece = this.board[move.from.row][move.from.col];
+        if (!piece) return false;
+        const color = piece.color;
         const clone = this.clone();
         clone.executeMove(move, true);
-        const color = this.board[move.from.row][move.from.col].color;
         return !clone.isInCheck(color);
     }
 
@@ -786,6 +793,11 @@ class ChessEngine {
         this.board[to.row][to.col] = piece;
         this.board[from.row][from.col] = null;
 
+        // Update king position cache
+        if (piece.type === 'king') {
+            this._kingPos[piece.color] = { row: to.row, col: to.col };
+        }
+
         // Promotion
         if (move.promotion) {
             const promoted = new PieceEntity(move.promotion, piece.color, piece.id);
@@ -952,10 +964,20 @@ class ChessEngine {
     /* --- Check / Checkmate / Stalemate --- */
 
     findKing(color) {
+        // Use cache if available
+        const cached = this._kingPos && this._kingPos[color];
+        if (cached) {
+            const p = this.board[cached.row][cached.col];
+            if (p && p.type === 'king' && p.color === color) return cached;
+        }
+        // Fallback: full scan (needed on first call or after cache miss)
         for (let r = 0; r < 8; r++) {
             for (let c = 0; c < 8; c++) {
                 const p = this.board[r][c];
-                if (p && p.type === 'king' && p.color === color) return { row: r, col: c };
+                if (p && p.type === 'king' && p.color === color) {
+                    if (this._kingPos) this._kingPos[color] = { row: r, col: c };
+                    return { row: r, col: c };
+                }
             }
         }
         return null;

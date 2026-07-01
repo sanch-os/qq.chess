@@ -135,10 +135,10 @@ const ITEMS_DB = {
         extraKnightOffsets: [],
     },
 
-    treasure_map: {
-        id: 'treasure_map',
-        name: { ru: "Карта сокровищ", en: "Treasure Map", es: "Mapa del Tesoro" },
-        description: { ru: "+150 золота за победу в раунде.", en: "+150 gold for winning the round.", es: "+150 de oro por ganar la ronda." },
+    small_treasure_map: {
+        id: 'small_treasure_map',
+        name: { ru: "Потёртая карта", en: "Worn Treasure Map", es: "Mapa Gastado" },
+        description: { ru: "+50 золота за победу в раунде.", en: "+50 gold for winning the round.", es: "+50 de oro por ganar la ronda." },
         icon: '🗺️',
         rarity: 'common',
         category: 'utility',
