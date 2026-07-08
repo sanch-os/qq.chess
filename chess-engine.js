@@ -109,11 +109,13 @@ class ChessEngine {
                 const whitePiece = this.board[r][c];
                 if (whitePiece && whitePiece.color === 'white') {
                     const blackPiece = new PieceEntity(whitePiece.type, 'black');
-                    // Copy items
-                    whitePiece.getItems().forEach((item, index) => {
+                    // Копируем предметы по слотам (сохраняем инвентарь у чёрных фигур).
+                    // Раньше здесь вызывался несуществующий метод recalculateStats(),
+                    // из-за чего бросалось исключение и инвентарь чёрных фигур пропадал.
+                    whitePiece.items.forEach((item, index) => {
                         if (item) {
-                            blackPiece.items[index] = { ...item };
-                            blackPiece.recalculateStats();
+                            // setItem копирует предмет в слот и пересчитывает щит через _recomputeShield()
+                            blackPiece.setItem(index, { ...item, modifiers: { ...(item.modifiers || {}) } });
                         }
                     });
                     this.board[7 - r][c] = blackPiece;
@@ -1137,6 +1139,17 @@ class ChessEngine {
     }
 
     hasKing(color) { return this.findKing(color) !== null; }
+
+    // Есть ли на доске хотя бы одна фигура указанного цвета
+    hasAnyPiece(color) {
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const p = this.board[r][c];
+                if (p && p.color === color) return true;
+            }
+        }
+        return false;
+    }
 
     countPieces(color) {
         let count = 0;
