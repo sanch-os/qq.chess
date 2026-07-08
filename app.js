@@ -126,6 +126,8 @@
         if (window.Tutorial && window.Tutorial.onScreenChange) {
             window.Tutorial.onScreenChange(name);
         }
+        // Обновляем список пресетов при входе на экран расстановки
+        if (name === 'setup') renderPresetsList();
     }
 
     // --- Build Board ---
@@ -1018,6 +1020,12 @@
             modalGameover.classList.remove('active');
             showScreen('menu');
         });
+
+        // --- Пресеты расстановок ---
+        const btnSavePreset = document.getElementById('btn-save-preset');
+        if (btnSavePreset) {
+            btnSavePreset.addEventListener('click', onSavePresetClick);
+        }
     }
 
     // --- Creative Mode ---
@@ -1184,7 +1192,13 @@
             document.getElementById('run-round').textContent = window.t('run.creative_pvp');
             document.getElementById('btn-undo').style.display = 'none';
         } else if (isCreativeMode) {
-            engine.setupBlackStandard();
+            // Творческий режим против бота.
+            // БАГ (исправлено): раньше здесь ВСЕГДА вызывался engine.setupBlackStandard(),
+            // который затирал вручную расставленную армию чёрных вместе с её инвентарём.
+            // Теперь стандартная армия ставится только если игрок сам не расставлял чёрных.
+            if (!engine.hasAnyPiece('black')) {
+                engine.setupBlackStandard();
+            }
             document.getElementById('run-gold').textContent = '';
             document.getElementById('run-round').textContent = window.t('run.creative_bot');
             document.getElementById('btn-undo').style.display = 'block';
@@ -1932,5 +1946,255 @@
     }
 
     // --- Start ---
+    /* ============================================
+       Система пресетов расстановок
+       Сохранение/загрузка позиций фигур, их типов,
+       сторон, щитов и инвентаря в localStorage.
+       ============================================ */
+
+    const PRESETS_STORAGE_KEY = 'qqChess.presets';
+
+    // --- Работа с localStorage (с обработкой ошибок) ---
+
+    function loadPresets() {
+        try {
+            const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
+            if (!raw) return [];
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            console.error('Не удалось прочитать пресеты из localStorage:', e);
+            return [];
+        }
+    }
+
+    function savePresets(presets) {
+        try {
+            localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(presets));
+            return true;
+        } catch (e) {
+            console.error('Не удалось сохранить пресеты в localStorage:', e);
+            // Частая причина — переполнение квоты хранилища
+            const msg = (e && e.name === 'QuotaExceededError')
+                ? 'Недостаточно места в хранилище браузера. Удалите часть пресетов.'
+                : 'Не удалось сохранить пресет (ошибка хранилища браузера).';
+            alert(msg);
+            return false;
+        }
+    }
+
+    // --- Сериализация / десериализация состояния расстановки ---
+
+    // Собираем текущее состояние доски в простой JSON-объект.
+    // Сохраняем позиции, типы, стороны, щит и ПОЛНЫЙ инвентарь для обеих сторон.
+    function serializeSetup() {
+        const pieces = [];
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const p = engine.getPiece(r, c);
+                if (!p) continue;
+                // Инвентарь: сохраняем предметы по слотам (с модификаторами),
+                // чтобы состояние восстанавливалось полностью для белых и чёрных.
+                const items = (p.items || []).map(item =>
+                    item ? { ...item, modifiers: { ...(item.modifiers || {}) } } : null
+                );
+                pieces.push({
+                    row: r,
+                    col: c,
+                    type: p.type,
+                    baseType: p.baseType || p.type,
+                    color: p.color,
+                    shield: p.shield || 0,
+                    items: items
+                });
+            }
+        }
+        return {
+            version: 1,
+            mode: { creative: isCreativeMode, pvp: isPvP, mirror: isMirrorMode, roguelike: isRoguelikeMode },
+            pieces: pieces
+        };
+    }
+
+    // Восстанавливаем состояние доски из объекта пресета.
+    function deserializeSetup(data) {
+        if (!data || !Array.isArray(data.pieces)) return false;
+
+        // Полностью очищаем доску
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                engine.board[r][c] = null;
+            }
+        }
+
+        // Восстанавливаем каждую фигуру с её инвентарём
+        for (const pd of data.pieces) {
+            if (pd.row == null || pd.col == null || !pd.type || !pd.color) continue;
+            const piece = new PieceEntity(pd.type, pd.color);
+            if (pd.baseType) piece.baseType = pd.baseType;
+            // Восстанавливаем предметы по слотам одинаково для белых и чёрных
+            const items = Array.isArray(pd.items) ? pd.items : [];
+            for (let slot = 0; slot < items.length && slot < 3; slot++) {
+                const item = items[slot];
+                if (item) {
+                    piece.setItem(slot, { ...item, modifiers: { ...(item.modifiers || {}) } });
+                }
+            }
+            engine.board[pd.row][pd.col] = piece;
+        }
+        return true;
+    }
+
+    // --- Обработчики UI ---
+
+    function onSavePresetClick() {
+        const name = (prompt('Название пресета:') || '').trim();
+        if (!name) return; // отмена или пустое имя
+
+        const presets = loadPresets();
+        const now = new Date().toISOString();
+        const data = serializeSetup();
+
+        // Проверка на существующее название с подтверждением перезаписи
+        const existingIndex = presets.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+        if (existingIndex !== -1) {
+            if (!confirm(`Пресет «${name}» уже существует. Перезаписать?`)) return;
+            presets[existingIndex].data = data;
+            presets[existingIndex].updatedAt = now;
+        } else {
+            presets.push({
+                id: 'preset_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+                name: name,
+                createdAt: now,
+                updatedAt: now,
+                data: data
+            });
+        }
+
+        if (savePresets(presets)) renderPresetsList();
+    }
+
+    function loadPresetById(id) {
+        const presets = loadPresets();
+        const preset = presets.find(p => p.id === id);
+        if (!preset) return;
+
+        if (deserializeSetup(preset.data)) {
+            // Обновляем интерфейс расстановки
+            lastMove = null;
+            renderBoard(boardSetup);
+            if (typeof renderStashSetup === 'function') renderStashSetup();
+            if (typeof renderInventory === 'function') renderInventory();
+            updateStartButton();
+        } else {
+            alert('Не удалось загрузить пресет: повреждённые данные.');
+        }
+    }
+
+    function renamePresetById(id) {
+        const presets = loadPresets();
+        const preset = presets.find(p => p.id === id);
+        if (!preset) return;
+
+        const newName = (prompt('Новое название пресета:', preset.name) || '').trim();
+        if (!newName || newName === preset.name) return;
+
+        // Проверка на конфликт имён
+        const conflict = presets.find(p => p.id !== id && p.name.toLowerCase() === newName.toLowerCase());
+        if (conflict) {
+            alert(`Пресет с названием «${newName}» уже существует.`);
+            return;
+        }
+
+        preset.name = newName;
+        preset.updatedAt = new Date().toISOString();
+        if (savePresets(presets)) renderPresetsList();
+    }
+
+    function deletePresetById(id) {
+        const presets = loadPresets();
+        const preset = presets.find(p => p.id === id);
+        if (!preset) return;
+        if (!confirm(`Удалить пресет «${preset.name}»?`)) return;
+
+        const filtered = presets.filter(p => p.id !== id);
+        if (savePresets(filtered)) renderPresetsList();
+    }
+
+    function formatPresetDate(iso) {
+        try {
+            const d = new Date(iso);
+            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function renderPresetsList() {
+        const listEl = document.getElementById('presets-list');
+        if (!listEl) return;
+
+        const presets = loadPresets();
+        listEl.innerHTML = '';
+
+        if (presets.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'presets-empty';
+            empty.textContent = 'Нет сохранённых пресетов';
+            listEl.appendChild(empty);
+            return;
+        }
+
+        // Показываем сначала недавно обновлённые
+        presets
+            .slice()
+            .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
+            .forEach(preset => {
+                const item = document.createElement('div');
+                item.className = 'preset-item';
+
+                const info = document.createElement('div');
+                info.style.cssText = 'flex:1; min-width:0;';
+                const nameEl = document.createElement('div');
+                nameEl.className = 'preset-name';
+                nameEl.textContent = preset.name;
+                nameEl.title = preset.name;
+                const dateEl = document.createElement('div');
+                dateEl.className = 'preset-date';
+                dateEl.textContent = formatPresetDate(preset.updatedAt || preset.createdAt);
+                info.appendChild(nameEl);
+                info.appendChild(dateEl);
+
+                const actions = document.createElement('div');
+                actions.className = 'preset-actions';
+
+                const btnLoad = document.createElement('button');
+                btnLoad.className = 'preset-btn';
+                btnLoad.textContent = '📥';
+                btnLoad.title = 'Загрузить';
+                btnLoad.addEventListener('click', () => loadPresetById(preset.id));
+
+                const btnRename = document.createElement('button');
+                btnRename.className = 'preset-btn';
+                btnRename.textContent = '✏️';
+                btnRename.title = 'Переименовать';
+                btnRename.addEventListener('click', () => renamePresetById(preset.id));
+
+                const btnDelete = document.createElement('button');
+                btnDelete.className = 'preset-btn preset-btn-danger';
+                btnDelete.textContent = '🗑️';
+                btnDelete.title = 'Удалить';
+                btnDelete.addEventListener('click', () => deletePresetById(preset.id));
+
+                actions.appendChild(btnLoad);
+                actions.appendChild(btnRename);
+                actions.appendChild(btnDelete);
+
+                item.appendChild(info);
+                item.appendChild(actions);
+                listEl.appendChild(item);
+            });
+    }
+
     init();
 })();
