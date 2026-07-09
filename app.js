@@ -1306,6 +1306,12 @@
         renderPieceInventorySlots(piece, isReadOnly);
         renderPieceInventoryStash(piece, isReadOnly);
 
+        // Пресеты (тип + инвентарь фигуры): доступны только при редактировании
+        // расстановки, но не в режиме просмотра во время игры.
+        const presetSection = document.getElementById('piece-inv-preset-section');
+        if (presetSection) presetSection.style.display = isReadOnly ? 'none' : '';
+        if (!isReadOnly) renderPiecePresetList();
+
         // Bind remove button (hide in read-only)
         const removeBtn = document.getElementById('piece-inv-remove');
         if (isReadOnly) {
@@ -1983,77 +1989,72 @@
         }
     }
 
-    // --- Сериализация / десериализация состояния расстановки ---
+    // --- Сериализация / применение пресета одной фигуры ---
 
-    // Собираем текущее состояние доски в простой JSON-объект.
-    // Сохраняем позиции, типы, стороны, щит и ПОЛНЫЙ инвентарь для обеих сторон.
-    function serializeSetup() {
-        const pieces = [];
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                const p = engine.getPiece(r, c);
-                if (!p) continue;
-                // Инвентарь: сохраняем предметы по слотам (с модификаторами),
-                // чтобы состояние восстанавливалось полностью для белых и чёрных.
-                const items = (p.items || []).map(item =>
-                    item ? { ...item, modifiers: { ...(item.modifiers || {}) } } : null
-                );
-                pieces.push({
-                    row: r,
-                    col: c,
-                    type: p.type,
-                    baseType: p.baseType || p.type,
-                    color: p.color,
-                    shield: p.shield || 0,
-                    items: items
-                });
-            }
-        }
+    // Пресет хранит ТОЛЬКО тип фигуры и её инвентарь
+    // (набор предметов/способностей/характеристик), но НЕ позицию
+    // и НЕ всю доску. Характеристики фигуры полностью определяются
+    // её типом и предметами (см. PieceEntity.getStats()), поэтому
+    // достаточно сохранить type + baseType + items (+ производный shield).
+    function serializePiecePreset(piece) {
+        if (!piece) return null;
+        // Инвентарь: сохраняем предметы по слотам вместе с модификаторами.
+        const items = (piece.items || []).map(item =>
+            item ? { ...item, modifiers: { ...(item.modifiers || {}) } } : null
+        );
         return {
-            version: 1,
-            mode: { creative: isCreativeMode, pvp: isPvP, mirror: isMirrorMode, roguelike: isRoguelikeMode },
-            pieces: pieces
+            version: 2,
+            type: piece.type,
+            baseType: piece.baseType || piece.type,
+            shield: piece.shield || 0,
+            items: items
         };
     }
 
-    // Восстанавливаем состояние доски из объекта пресета.
-    function deserializeSetup(data) {
-        if (!data || !Array.isArray(data.pieces)) return false;
+    // Применяем пресет к конкретной фигуре: задаём её тип и инвентарь.
+    // Доска и позиции фигур при этом не трогаются.
+    function applyPiecePreset(piece, data) {
+        if (!piece || !(piece instanceof PieceEntity) || !data) return false;
+        // Пресет обязан содержать инвентарь. Старый формат (вся доска,
+        // data.pieces[]) больше не поддерживается.
+        if (!Array.isArray(data.items)) return false;
 
-        // Полностью очищаем доску
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                engine.board[r][c] = null;
-            }
+        // Тип фигуры
+        if (data.type) {
+            piece.type = data.type;
+            piece.baseType = data.baseType || data.type;
         }
 
-        // Восстанавливаем каждую фигуру с её инвентарём
-        for (const pd of data.pieces) {
-            if (pd.row == null || pd.col == null || !pd.type || !pd.color) continue;
-            const piece = new PieceEntity(pd.type, pd.color);
-            if (pd.baseType) piece.baseType = pd.baseType;
-            // Восстанавливаем предметы по слотам одинаково для белых и чёрных
-            const items = Array.isArray(pd.items) ? pd.items : [];
-            for (let slot = 0; slot < items.length && slot < 3; slot++) {
-                const item = items[slot];
-                if (item) {
-                    piece.setItem(slot, { ...item, modifiers: { ...(item.modifiers || {}) } });
-                }
+        // Инвентарь: полностью пересобираем слоты
+        piece.items = [null, null, null];
+        for (let slot = 0; slot < data.items.length && slot < 3; slot++) {
+            const item = data.items[slot];
+            if (item) {
+                piece.setItem(slot, { ...item, modifiers: { ...(item.modifiers || {}) } });
             }
-            engine.board[pd.row][pd.col] = piece;
         }
+        piece._recomputeShield();
         return true;
     }
 
     // --- Обработчики UI ---
 
+    // Сохранение пресета вызывается из окна инвентаря фигуры и
+    // сохраняет тип + инвентарь текущей открытой фигуры.
     function onSavePresetClick() {
+        if (!pieceInvTarget) {
+            alert('Откройте фигуру (кликните по ней на доске), чтобы сохранить её как пресет.');
+            return;
+        }
+        const piece = engine.getPiece(pieceInvTarget.row, pieceInvTarget.col);
+        if (!piece || !(piece instanceof PieceEntity)) return;
+
         const name = (prompt('Название пресета:') || '').trim();
         if (!name) return; // отмена или пустое имя
 
         const presets = loadPresets();
         const now = new Date().toISOString();
-        const data = serializeSetup();
+        const data = serializePiecePreset(piece);
 
         // Проверка на существующее название с подтверждением перезаписи
         const existingIndex = presets.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
@@ -2071,23 +2072,32 @@
             });
         }
 
-        if (savePresets(presets)) renderPresetsList();
+        if (savePresets(presets)) {
+            renderPresetsList();
+            renderPiecePresetList();
+        }
     }
 
-    function loadPresetById(id) {
+    // Применяем пресет к фигуре, открытой в окне инвентаря.
+    function applyPresetToCurrentPiece(id) {
+        if (!pieceInvTarget) return;
+        const piece = engine.getPiece(pieceInvTarget.row, pieceInvTarget.col);
+        if (!piece || !(piece instanceof PieceEntity)) return;
+
         const presets = loadPresets();
         const preset = presets.find(p => p.id === id);
         if (!preset) return;
 
-        if (deserializeSetup(preset.data)) {
-            // Обновляем интерфейс расстановки
-            lastMove = null;
-            renderBoard(boardSetup);
-            if (typeof renderStashSetup === 'function') renderStashSetup();
-            if (typeof renderInventory === 'function') renderInventory();
+        if (applyPiecePreset(piece, preset.data)) {
+            // Обновляем шапку и содержимое окна под новый тип/инвентарь
+            document.getElementById('piece-inv-icon').textContent = PIECE_SYMBOLS[piece.color]?.[piece.type] || '♟';
+            document.getElementById('piece-inv-title').textContent = window.t('piece.' + piece.type) || piece.type;
+            document.getElementById('piece-inv-subtitle').textContent = window.t('piece.inv.subtitle.slots').replace('{count}', piece.getItems().length);
+            renderPieceInventorySlots(piece);
+            renderPieceInventoryStash(piece);
             updateStartButton();
         } else {
-            alert('Не удалось загрузить пресет: повреждённые данные.');
+            alert('Не удалось применить пресет: повреждённые или устаревшие данные.');
         }
     }
 
@@ -2108,7 +2118,10 @@
 
         preset.name = newName;
         preset.updatedAt = new Date().toISOString();
-        if (savePresets(presets)) renderPresetsList();
+        if (savePresets(presets)) {
+            renderPresetsList();
+            renderPiecePresetList();
+        }
     }
 
     function deletePresetById(id) {
@@ -2118,7 +2131,10 @@
         if (!confirm(`Удалить пресет «${preset.name}»?`)) return;
 
         const filtered = presets.filter(p => p.id !== id);
-        if (savePresets(filtered)) renderPresetsList();
+        if (savePresets(filtered)) {
+            renderPresetsList();
+            renderPiecePresetList();
+        }
     }
 
     function formatPresetDate(iso) {
@@ -2130,6 +2146,60 @@
         }
     }
 
+    // Собираем DOM-элемент одного пресета.
+    // showApply=true — добавляет кнопку «Применить» (используется в окне фигуры,
+    // где есть конкретная фигура-цель).
+    function buildPresetItem(preset, showApply) {
+        const item = document.createElement('div');
+        item.className = 'preset-item';
+
+        const info = document.createElement('div');
+        info.style.cssText = 'flex:1; min-width:0;';
+        const nameEl = document.createElement('div');
+        nameEl.className = 'preset-name';
+        nameEl.textContent = preset.name;
+        nameEl.title = preset.name;
+        const dateEl = document.createElement('div');
+        dateEl.className = 'preset-date';
+        dateEl.textContent = formatPresetDate(preset.updatedAt || preset.createdAt);
+        info.appendChild(nameEl);
+        info.appendChild(dateEl);
+
+        const actions = document.createElement('div');
+        actions.className = 'preset-actions';
+
+        if (showApply) {
+            const btnApply = document.createElement('button');
+            btnApply.className = 'preset-btn';
+            btnApply.textContent = '📥';
+            btnApply.title = 'Применить к этой фигуре';
+            btnApply.addEventListener('click', () => applyPresetToCurrentPiece(preset.id));
+            actions.appendChild(btnApply);
+        }
+
+        const btnRename = document.createElement('button');
+        btnRename.className = 'preset-btn';
+        btnRename.textContent = '✏️';
+        btnRename.title = 'Переименовать';
+        btnRename.addEventListener('click', () => renamePresetById(preset.id));
+
+        const btnDelete = document.createElement('button');
+        btnDelete.className = 'preset-btn preset-btn-danger';
+        btnDelete.textContent = '🗑️';
+        btnDelete.title = 'Удалить';
+        btnDelete.addEventListener('click', () => deletePresetById(preset.id));
+
+        actions.appendChild(btnRename);
+        actions.appendChild(btnDelete);
+
+        item.appendChild(info);
+        item.appendChild(actions);
+        return item;
+    }
+
+    // Список пресетов в боковой панели расстановки — только управление
+    // (переименование/удаление). Применять пресет можно из окна фигуры,
+    // так как для применения нужна конкретная фигура-цель.
     function renderPresetsList() {
         const listEl = document.getElementById('presets-list');
         if (!listEl) return;
@@ -2145,55 +2215,32 @@
             return;
         }
 
-        // Показываем сначала недавно обновлённые
         presets
             .slice()
             .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
-            .forEach(preset => {
-                const item = document.createElement('div');
-                item.className = 'preset-item';
+            .forEach(preset => listEl.appendChild(buildPresetItem(preset, false)));
+    }
 
-                const info = document.createElement('div');
-                info.style.cssText = 'flex:1; min-width:0;';
-                const nameEl = document.createElement('div');
-                nameEl.className = 'preset-name';
-                nameEl.textContent = preset.name;
-                nameEl.title = preset.name;
-                const dateEl = document.createElement('div');
-                dateEl.className = 'preset-date';
-                dateEl.textContent = formatPresetDate(preset.updatedAt || preset.createdAt);
-                info.appendChild(nameEl);
-                info.appendChild(dateEl);
+    // Список пресетов внутри окна инвентаря фигуры — с кнопкой «Применить».
+    function renderPiecePresetList() {
+        const listEl = document.getElementById('piece-inv-presets-list');
+        if (!listEl) return;
 
-                const actions = document.createElement('div');
-                actions.className = 'preset-actions';
+        const presets = loadPresets();
+        listEl.innerHTML = '';
 
-                const btnLoad = document.createElement('button');
-                btnLoad.className = 'preset-btn';
-                btnLoad.textContent = '📥';
-                btnLoad.title = 'Загрузить';
-                btnLoad.addEventListener('click', () => loadPresetById(preset.id));
+        if (presets.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'presets-empty';
+            empty.textContent = 'Нет сохранённых пресетов';
+            listEl.appendChild(empty);
+            return;
+        }
 
-                const btnRename = document.createElement('button');
-                btnRename.className = 'preset-btn';
-                btnRename.textContent = '✏️';
-                btnRename.title = 'Переименовать';
-                btnRename.addEventListener('click', () => renamePresetById(preset.id));
-
-                const btnDelete = document.createElement('button');
-                btnDelete.className = 'preset-btn preset-btn-danger';
-                btnDelete.textContent = '🗑️';
-                btnDelete.title = 'Удалить';
-                btnDelete.addEventListener('click', () => deletePresetById(preset.id));
-
-                actions.appendChild(btnLoad);
-                actions.appendChild(btnRename);
-                actions.appendChild(btnDelete);
-
-                item.appendChild(info);
-                item.appendChild(actions);
-                listEl.appendChild(item);
-            });
+        presets
+            .slice()
+            .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
+            .forEach(preset => listEl.appendChild(buildPresetItem(preset, true)));
     }
 
     init();

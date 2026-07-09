@@ -96,13 +96,12 @@
                     </button>
                 </div>
 
-                <!-- ===== Пресеты расстановок ===== -->
+                <!-- ===== Пресеты фигур (тип + инвентарь) ===== -->
                 <div class="presets-panel" id="presets-panel">
                     <div class="presets-header">
                         <h2 class="panel-title" style="margin:0;" data-i18n="presets.title">Пресеты</h2>
-                        <button id="btn-save-preset" class="btn btn-small btn-accent" data-i18n="presets.save" title="Сохранить текущую расстановку">💾 Сохранить</button>
                     </div>
-                    <p class="panel-hint" data-i18n="presets.hint">Сохранённые расстановки фигур и предметов</p>
+                    <p class="panel-hint" data-i18n="presets.hint">Сохранённые фигуры (тип + инвентарь). Сохранить или применить пресет можно в окне фигуры.</p>
                     <div id="presets-list" class="presets-list"></div>
                 </div>
             </aside>
@@ -333,6 +332,16 @@
                 <p id="piece-inv-stash-empty" class="piece-inv-empty-msg hidden" data-i18n="piece.inv.empty">Сундук пуст.</p>
             </div>
 
+            <!-- ===== Пресеты фигуры: тип + инвентарь ===== -->
+            <div class="piece-inv-preset-section" id="piece-inv-preset-section">
+                <div class="presets-header" style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                    <h3 class="piece-inv-stash-title" style="margin:0;" data-i18n="presets.title">Пресеты</h3>
+                    <button id="btn-save-preset" class="btn btn-small btn-accent" data-i18n="presets.save" title="Сохранить тип и инвентарь этой фигуры как пресет">&#128190; Сохранить</button>
+                </div>
+                <p class="panel-hint" data-i18n="presets.hint_piece">Сохраните тип и инвентарь этой фигуры или примените сохранённый пресет</p>
+                <div id="piece-inv-presets-list" class="presets-list"></div>
+            </div>
+
             <div class="piece-inv-actions">
                 <button id="piece-inv-remove" class="btn btn-danger btn-small" data-i18n="piece.inv.btn.remove">&#128465; Убрать фигуру</button>
             </div>
@@ -368,5 +377,6 @@
     <script src="pieces-svg.js?v=3"></script>
     <script src="app.js?v=8"></script>
     <script src="tutorial.js?v=1"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"f0f03d0605bf45f1a3b17cf7d5e6861f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 </body>
 </html>

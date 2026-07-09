@@ -1549,6 +1549,18 @@ body {
     margin-bottom: 18px;
 }
 
+.piece-inv-preset-section {
+    border-top: 1px solid var(--glass-border);
+    padding-top: 18px;
+    margin-bottom: 18px;
+}
+
+.piece-inv-preset-section .presets-list {
+    max-height: 160px;
+    overflow-y: auto;
+    margin-top: 8px;
+}
+
 .piece-inv-stash-title {
     font-size: 0.95em;
     font-weight: 600;
