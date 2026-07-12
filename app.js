@@ -163,39 +163,77 @@
             const stashFloatingPanel = document.querySelector('.stash-floating-panel');
 
             if (setupLayout) {
-                const inventoryPanel = document.querySelector('.inventory-panel');
                 const boardWithLabels = document.querySelector('.board-with-labels');
 
+                // --- UNIFIED SETUP LAYOUT ---
+                // Every mode now uses the raid-style vertical layout with the
+                // floating "Item Stash" panel that overlaps the unused board area.
+                // Only mode-specific chrome (test-drive toggle, stash contents,
+                // start-button label, second-player shift) differs per mode.
+                setupLayout.classList.add('setup-vertical-layout');
+
+                // Move the stash panel over the board so its absolute positioning
+                // lines up with the board (raid reference behaviour, now shared).
+                if (stashFloatingPanel && boardWithLabels && stashFloatingPanel.parentElement !== boardWithLabels) {
+                    boardWithLabels.appendChild(stashFloatingPanel);
+                }
+
+                // Test-Drive toggle: raid setup only.
                 if (typeof isRaidSetupMode !== 'undefined' && isRaidSetupMode) {
-                    setupLayout.classList.add('setup-vertical-layout');
-                    // Show test-drive toggle only in raid
                     if (testToggleWrap) testToggleWrap.style.display = '';
-                    
-                    // Move stash to board-with-labels for exact absolute positioning over the board
-                    if (stashFloatingPanel && boardWithLabels && stashFloatingPanel.parentElement !== boardWithLabels) {
-                        boardWithLabels.appendChild(stashFloatingPanel);
-                    }
-                    if (stashFloatingPanel) stashFloatingPanel.style.display = 'flex';
                 } else {
-                    setupLayout.classList.remove('setup-vertical-layout');
-                    // Hide test toggle and reset it for non-raid modes
                     if (testToggleWrap) testToggleWrap.style.display = 'none';
                     if (testToggleCheck) testToggleCheck.checked = false;
                     isRaidTestMode = false;
-                    
-                    // Move stash back to inventory panel (its default location in horizontal layout)
-                    if (stashFloatingPanel && inventoryPanel && stashFloatingPanel.parentElement !== inventoryPanel) {
-                        inventoryPanel.appendChild(stashFloatingPanel);
-                    }
-                    // Hide the floating stash panel — not used in horizontal layout
-                    if (stashFloatingPanel) stashFloatingPanel.style.display = 'none';
-                    
-                    if (startBtn && window.t) {
-                        startBtn.innerHTML = '<span class="btn-icon">▶</span> <span>' + window.t('setup.btn.start') + '</span>';
-                    }
                 }
+
+                // The floating stash is only meaningful for modes that use items
+                // (raid, roguelike, creative / PvP). Mirror & classic have no item
+                // system, so the panel stays hidden (board top rows show through).
+                const usesItems = (typeof isRaidSetupMode !== 'undefined' && isRaidSetupMode)
+                    || isRoguelikeMode || isCreativeMode;
+                if (stashFloatingPanel) stashFloatingPanel.style.display = usesItems ? 'flex' : 'none';
+
+                // Start-button label: raid keeps its custom "⚔️ В БОЙ" (set on entry);
+                // all other modes use the standard start label.
+                if (!(typeof isRaidSetupMode !== 'undefined' && isRaidSetupMode) && startBtn && window.t) {
+                    startBtn.innerHTML = '<span class="btn-icon">▶</span> <span>' + window.t('setup.btn.start') + '</span>';
+                }
+
+                // Keep the stash header + off-board placement in sync with the
+                // active side (creative PvP second player, black editing, etc.).
+                updateSetupPanelPlacement();
             }
         }
+    }
+
+    // --- Unified setup: floating stash header + placement ---
+    // Updates the floating stash panel title/hint to reflect the side that is
+    // currently being placed, and shifts the panel OFF the board while the
+    // second (black) player is placing pieces so their zone (top rows) is free.
+    function updateStashPanelHeader() {
+        const panel = document.querySelector('.stash-floating-panel');
+        if (!panel) return;
+        const title = panel.querySelector('.panel-title');
+        const hint = panel.querySelector('.panel-hint');
+        const tt = (k, fallback) => (window.t && window.t(k)) || fallback;
+        if (isCreativeMode && isPvP && isBlackSetup) {
+            // Second player prompt (creative PvP).
+            if (title) title.textContent = tt('setup.pvp_black_turn', '♛ Второй игрок, расставляйте фигуры');
+            if (hint) hint.textContent = tt('setup.pvp_black_hint', 'Разместите чёрные фигуры на верхних клетках, затем нажмите «Начать игру»');
+        } else {
+            if (title) title.textContent = tt('setup.stash', 'Сундук Предметов');
+            if (hint) hint.textContent = tt('setup.stash_hint', 'Перетащите на ваши фигуры или кликните фигуру');
+        }
+    }
+
+    function updateSetupPanelPlacement() {
+        const setupLayout = document.querySelector('.setup-layout');
+        if (!setupLayout) return;
+        // When placing BLACK (top rows are the placement zone), the floating
+        // stash would cover that zone — shift it off the board via CSS.
+        setupLayout.classList.toggle('setup-black-phase', !!isBlackSetup);
+        updateStashPanelHeader();
     }
 
 
@@ -1081,6 +1119,14 @@
 
         document.getElementById('btn-new-run').addEventListener('click', () => {
             isRoguelikeMode = true;
+            // Reset cross-mode flags so a leftover PvP/raid state can't affect
+            // roguelike setup (placement zone / unified panel shift).
+            isCreativeMode = false;
+            isPvP = false;
+            isMirrorMode = false;
+            isBlackSetup = false;
+            isRaidMode = false;
+            isRaidSetupMode = false;
             runManager.startRun();
             engine.reset();
             resetInventory();
@@ -1098,6 +1144,8 @@
             isPvP = false;
             isMirrorMode = true;
             isBlackSetup = false;
+            isRaidMode = false;
+            isRaidSetupMode = false;
             engine.reset();
             resetInventory();
             runManager.playerItems = [];
@@ -1182,6 +1230,7 @@
                     renderBoard(boardSetup);
                     renderInventory();
                     updateStartButton();
+                    updateSetupPanelPlacement();
                 } else {
                     // Switch to Black
                     isBlackSetup = true;
@@ -1201,6 +1250,7 @@
                     renderBoard(boardSetup);
                     renderInventory();
                     updateStartButton();
+                    updateSetupPanelPlacement();
                 }
             });
         }
@@ -1344,6 +1394,9 @@
         isCreativeMode = true;
         isPvP = pvp;
         isBlackSetup = false;
+        isMirrorMode = false;
+        isRaidMode = false;
+        isRaidSetupMode = false;
 
         engine.reset();
         resetInventory(true); // creative inventory
@@ -1411,6 +1464,9 @@
         renderInventory();
         renderStashSetup();
         updateStartButton();
+        // Second player (black) now placing — shift the floating stash off the
+        // board and show the "second player, place your pieces" prompt.
+        updateSetupPanelPlacement();
     }
 
     // --- Helpers ---

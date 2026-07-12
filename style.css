@@ -2699,6 +2699,57 @@ body {
     align-content: flex-start;
 }
 
+/* --- Creative PvP: second player (black) placement ---
+   While the second player places black pieces, the placement zone is the TOP
+   rows of the board — exactly where the floating stash normally sits. Shift the
+   panel OFF the board (pinned to a screen corner) so those rows stay fully
+   accessible and no popup overlaps the play field. The stash stays usable
+   (infinite items) and shows the "second player, place your pieces" prompt. */
+.setup-vertical-layout.setup-black-phase .stash-floating-panel {
+    position: fixed;
+    top: 84px;
+    right: 16px;
+    left: auto;
+    bottom: auto;
+    width: 260px;
+    max-width: 34vw;
+    height: auto;
+    max-height: 62vh;
+    z-index: 60;
+    border-color: rgba(72, 212, 160, 0.55);
+    box-shadow:
+        0 10px 40px rgba(0,0,0,0.7),
+        0 0 0 1px rgba(72,212,160,0.25),
+        0 0 22px rgba(72,212,160,0.3);
+    animation: stashShiftIn 0.35s ease;
+}
+.setup-vertical-layout.setup-black-phase .stash-floating-panel .panel-title {
+    color: var(--success, #48d4a0);
+}
+
+@keyframes stashShiftIn {
+    from { opacity: 0; transform: translateX(24px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+/* On narrow screens there is no room beside the board — pin the panel to the
+   BOTTOM of the screen instead, still clear of the top placement rows. */
+@media (max-width: 900px) {
+    .setup-vertical-layout.setup-black-phase .stash-floating-panel {
+        top: auto;
+        bottom: 8px;
+        left: 8px;
+        right: 8px;
+        width: auto;
+        max-width: none;
+        max-height: 30vh;
+    }
+    @keyframes stashShiftIn {
+        from { opacity: 0; transform: translateY(24px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+}
+
 /* board-area: allow the floating stash panel to overlap the board itself */
 .setup-vertical-layout .board-area {
     width: 100%;
