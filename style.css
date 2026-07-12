@@ -1252,16 +1252,28 @@ body {
     align-content: flex-start;
     gap: 7px;
     overflow-y: auto;
+    overflow-x: hidden; /* No horizontal scroll — items must fit within 3 columns */
     padding-right: 4px;
     max-height: 340px;
-    scrollbar-width: thin;
-    scrollbar-color: var(--text-muted) transparent;
+    scrollbar-width: auto; /* Firefox: use auto so the width override takes effect */
+    scrollbar-color: rgba(255,255,255,0.35) transparent;
+    /* Smooth inertial scrolling on iOS; contain stops page from scrolling when stash hits its end */
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
 }
 
-.stash-grid::-webkit-scrollbar { width: 4px; }
+/* Wide scrollbar thumb — easy to grab on mobile */
+.stash-grid::-webkit-scrollbar { width: 14px; }
+.stash-grid::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); border-radius: 8px; }
 .stash-grid::-webkit-scrollbar-thumb {
-    background: var(--text-muted);
-    border-radius: 4px;
+    background: rgba(255,255,255,0.35);
+    border-radius: 8px;
+    border: 3px solid transparent; /* Creates visual padding inside the wider scrollbar */
+    background-clip: padding-box;
+}
+.stash-grid::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.55);
+    background-clip: padding-box;
 }
 
 /* Scrollable stash wrapper — используется внутри панелей */
@@ -2695,8 +2707,11 @@ body {
     flex: 1; /* Stretch to fill the whole panel */
     max-height: none; /* Remove previous limits */
     overflow-y: auto;
+    overflow-x: hidden; /* No horizontal scroll in the floating popup */
     margin-top: 6px;
     align-content: flex-start;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
 }
 
 /* --- Creative PvP: second player (black) placement ---
