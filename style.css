@@ -2730,9 +2730,9 @@ body {
     to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Mobile: board labels are hidden, so left gap is just 8px */
+/* Mobile (< 680px): board labels are hidden, so left gap needs to be 8px for ALL phases */
 @media (max-width: 680px) {
-    .setup-vertical-layout.setup-black-phase .stash-floating-panel {
+    .setup-vertical-layout .stash-floating-panel {
         left: 8px;
     }
 }
