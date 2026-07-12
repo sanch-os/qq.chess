@@ -2730,9 +2730,13 @@ body {
     to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Mobile (< 680px): board labels are hidden, so left gap needs to be 8px for ALL phases */
+/* Mobile (< 680px): board labels are hidden → force left: 8px for ALL phases.
+   The black-phase selector needs to be repeated here because it has higher
+   specificity (3 classes) than the base rule (2 classes), so without this
+   explicit override the base rule loses and the panel overflows on mobile. */
 @media (max-width: 680px) {
-    .setup-vertical-layout .stash-floating-panel {
+    .setup-vertical-layout .stash-floating-panel,
+    .setup-vertical-layout.setup-black-phase .stash-floating-panel {
         left: 8px;
     }
 }
