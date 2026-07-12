@@ -200,6 +200,13 @@
                     startBtn.innerHTML = '<span class="btn-icon">▶</span> <span>' + window.t('setup.btn.start') + '</span>';
                 }
 
+                // "Edit Black" button: only visible in Creative mode (PvP or PvE).
+                // Explicitly hide it for all other modes so state doesn't leak.
+                const btnSetupBlack = document.getElementById('btn-setup-black');
+                if (btnSetupBlack) {
+                    btnSetupBlack.style.display = isCreativeMode ? '' : 'none';
+                }
+
                 // Keep the stash header + off-board placement in sync with the
                 // active side (creative PvP second player, black editing, etc.).
                 updateSetupPanelPlacement();
@@ -926,19 +933,41 @@
             _pihtCount.className = 'piht-count full';
         }
 
-        // Position above the cell
+        // --- Smart positioning: prefer above, flip below if there's no room ---
         const rect = cell.getBoundingClientRect();
         _piht.style.display = 'block';
-        _piht.style.left = (rect.left + rect.width / 2 - _piht.offsetWidth / 2) + 'px';
-        _piht.style.top  = (rect.top - _piht.offsetHeight - 8) + 'px';
 
-        // Re-clamp horizontally to viewport
+        // We need the tooltip height — force a quick layout pass
+        const th = _piht.offsetHeight;
         const tw = _piht.offsetWidth;
         const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const MARGIN = 8;        // gap from cell edge
+        const FINGER_PAD = 18;   // extra gap below so a finger doesn't cover the text
+
+        // Horizontal: center over the cell, clamped inside viewport
         let left = rect.left + rect.width / 2 - tw / 2;
-        if (left < 6) left = 6;
-        if (left + tw > vw - 6) left = vw - tw - 6;
+        if (left < MARGIN) left = MARGIN;
+        if (left + tw > vw - MARGIN) left = vw - tw - MARGIN;
+
+        // Vertical: above by default, flip below when not enough room
+        const spaceAbove = rect.top;
+        const fitsAbove = spaceAbove - th - MARGIN > 0;
+
+        let top;
+        if (fitsAbove) {
+            top = rect.top - th - MARGIN;
+            _piht.style.transformOrigin = 'bottom center';
+        } else {
+            // Not enough space above → show below with finger clearance
+            top = rect.bottom + FINGER_PAD;
+            // If it also overflows the bottom, clamp
+            if (top + th > vh - MARGIN) top = vh - th - MARGIN;
+            _piht.style.transformOrigin = 'top center';
+        }
+
         _piht.style.left = left + 'px';
+        _piht.style.top  = top  + 'px';
     }
 
     function hidePieceInvTooltip() {

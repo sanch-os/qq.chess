@@ -2702,20 +2702,18 @@ body {
 /* --- Creative PvP: second player (black) placement ---
    While the second player places black pieces, the placement zone is the TOP
    rows of the board — exactly where the floating stash normally sits. Shift the
-   panel OFF the board (pinned to a screen corner) so those rows stay fully
-   accessible and no popup overlaps the play field. The stash stays usable
-   (infinite items) and shows the "second player, place your pieces" prompt. */
+   panel to the BOTTOM of the board so those rows stay fully accessible. */
 .setup-vertical-layout.setup-black-phase .stash-floating-panel {
-    position: fixed;
-    top: 84px;
-    right: 16px;
-    left: auto;
-    bottom: auto;
-    width: 260px;
-    max-width: 34vw;
-    height: auto;
-    max-height: 62vh;
-    z-index: 60;
+    top: auto;
+    bottom: 8px;
+    left: 32px; /* align with board (accounts for left labels) */
+    right: auto;
+    position: absolute;
+    width: calc(var(--board-size) - 16px);
+    height: calc((var(--board-size) * 0.75) - 16px);
+    max-height: none;
+    max-width: none;
+    z-index: 20;
     border-color: rgba(72, 212, 160, 0.55);
     box-shadow:
         0 10px 40px rgba(0,0,0,0.7),
@@ -2728,25 +2726,14 @@ body {
 }
 
 @keyframes stashShiftIn {
-    from { opacity: 0; transform: translateX(24px); }
-    to   { opacity: 1; transform: translateX(0); }
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 
-/* On narrow screens there is no room beside the board — pin the panel to the
-   BOTTOM of the screen instead, still clear of the top placement rows. */
-@media (max-width: 900px) {
+/* Mobile: board labels are hidden, so left gap is just 8px */
+@media (max-width: 680px) {
     .setup-vertical-layout.setup-black-phase .stash-floating-panel {
-        top: auto;
-        bottom: 8px;
         left: 8px;
-        right: 8px;
-        width: auto;
-        max-width: none;
-        max-height: 30vh;
-    }
-    @keyframes stashShiftIn {
-        from { opacity: 0; transform: translateY(24px); }
-        to   { opacity: 1; transform: translateY(0); }
     }
 }
 
