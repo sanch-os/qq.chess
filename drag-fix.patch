@@ -1,0 +1,251 @@
+diff --git a/app.js b/app.js
+index 0a01fd8..8eaae9c 100644
+--- a/app.js
++++ b/app.js
+@@ -40,6 +40,14 @@
+     let draggedItem = null; // { itemIndex: number }
+     let dragGhost = null;
+ 
++    // --- Centralized drag session (fix for drag race / stale-dragend bug) ---
++    // Lifecycle: idle -> preparing -> dragging -> dropping/cancelled -> cleanup -> idle
++    // There is only ever ONE active session; each has a unique monotonic id so a
++    // late/stale `dragend` from a previous gesture cannot clobber the current one.
++    let dragSessionSeq = 0;        // monotonically increasing counter
++    let activeDragSessionId = null; // id of the session currently in progress
++    let dragPhase = 'idle';
++
+     // --- Localization ---
+     function applyLocalization() {
+         document.querySelectorAll('[data-i18n]').forEach(el => {
+@@ -123,6 +131,18 @@
+         bindEvents();
+         populateMenuBackground();
+         showScreen('menu');
++
++        // Global safety nets: guarantee a drag session is torn down on every
++        // alternative termination path, not just drop/dragend.
++        // NB: we intentionally do NOT clean up on plain `pointerup`. During a
++        // native drag the browser suppresses pointer events, and the mobile-drag-
++        // drop polyfill uses pointerup to SYNTHESIZE the drop — cleaning up there
++        // would race the synthetic drop. drop/dragend/pointercancel already cover it.
++        window.addEventListener('pointercancel', () => cleanupDrag('pointercancel'));
++        window.addEventListener('blur', () => cleanupDrag('blur'));
++        document.addEventListener('visibilitychange', () => {
++            if (document.hidden) cleanupDrag('visibilitychange');
++        });
+     }
+ 
+     // --- Screen Management ---
+@@ -446,6 +466,7 @@
+             e.preventDefault();
+             return;
+         }
++        beginDragSession(el);
+         draggedPiece = { source: 'inventory', type, index: idx };
+         draggedItem = null;
+         createDragGhost(PIECE_SYMBOLS.white[type]);
+@@ -459,6 +480,8 @@
+         if (!el) return;
+ 
+         let item;
++        let pendingItem; // resolved item ref; assigned to draggedItem AFTER the
++                         // session opens (beginDragSession clears drag state).
+         const isInfinite = isCreativeMode || (typeof isRaidTestMode !== 'undefined' && isRaidTestMode);
+ 
+         if (isInfinite) {
+@@ -466,14 +489,16 @@
+             const itemId = el.dataset.itemId;
+             item = ITEMS_DB[itemId];
+             if (!item) { e.preventDefault(); return; }
+-            draggedItem = { itemId }; // store ID, not index
++            pendingItem = { itemId }; // store ID, not index
+         } else {
+             const idx = parseInt(el.dataset.itemIndex);
+             item = runManager.playerItems[idx];
+             if (!item) { e.preventDefault(); return; }
+-            draggedItem = { itemIndex: idx };
++            pendingItem = { itemIndex: idx };
+         }
+ 
++        beginDragSession(el);
++        draggedItem = pendingItem;
+         draggedPiece = null;
+         createDragGhost(item.icon || '📦');
+         el.classList.add('dragging');
+@@ -494,6 +519,7 @@
+             return;
+         }
+ 
++        beginDragSession(e.currentTarget);
+         draggedPiece = { source: 'board', row, col, type: piece.type };
+         draggedItem = null;
+         createDragGhost(engine.getSymbol(piece));
+@@ -503,15 +529,14 @@
+     }
+ 
+     function onDragEnd(e) {
+-        // Remove dragging class from inventory and stash items
+-        e.target.closest('.inventory-item')?.classList.remove('dragging');
+-        e.target.closest('.stash-item')?.classList.remove('dragging');
+-        // Also clear dragging class from any board cells
+-        document.querySelectorAll('.cell.dragging').forEach(c => c.classList.remove('dragging'));
+-        removeDragGhost();
+-        hidePieceInvTooltip();
+-        draggedPiece = null;
+-        draggedItem = null;
++        // Guard against a STALE dragend: `dragend` is delivered asynchronously and,
++        // under rapid successive drags, the PREVIOUS gesture's dragend can arrive
++        // AFTER the next gesture already started. If this element's session id no
++        // longer matches the active session, this dragend belongs to a finished
++        // session — ignore it so it cannot wipe the ghost/state of the LIVE drag.
++        const sid = e.currentTarget && e.currentTarget._dragSid;
++        if (sid !== activeDragSessionId) return;
++        cleanupDrag('dragend');
+     }
+ 
+     function onSetupDragOver(e) {
+@@ -573,6 +598,19 @@
+ 
+     function onSetupDrop(e) {
+         e.preventDefault();
++        // Run the drop logic, then ALWAYS clean up exactly once. Previously the
++        // several early `return`s in the drop logic skipped the cleanup block and
++        // relied on `dragend` firing afterwards — which is not guaranteed (e.g.
++        // when the source element is re-rendered mid-drop). cleanupDrag() is
++        // idempotent, so calling it here is always safe.
++        try {
++            performSetupDrop(e);
++        } finally {
++            cleanupDrag('drop');
++        }
++    }
++
++    function performSetupDrop(e) {
+         const cell = e.target.closest('.cell');
+         if (!cell) return;
+         cell.classList.remove('drop-valid', 'drop-invalid');
+@@ -651,13 +689,6 @@
+             renderInventory();
+             updateStartButton();
+         }
+-
+-        // Ensure any dragging indicators are cleared
+-        document.querySelectorAll('.cell.dragging').forEach(c => c.classList.remove('dragging'));
+-
+-        removeDragGhost();
+-        draggedPiece = null;
+-        draggedItem = null;
+     }
+ 
+     function onSetupCellClick(e) {
+@@ -675,24 +706,64 @@
+         }
+     }
+ 
++    // --- Centralized drag-session lifecycle -------------------------------
++    // Force-end any lingering session and open a brand-new one, stamping the
++    // source element with the new session id. Guarantees a single active
++    // session and lets onDragEnd reject stale dragend events by id.
++    function beginDragSession(sourceEl) {
++        cleanupDrag('new-drag');            // preparing: kill anything still lingering
++        activeDragSessionId = ++dragSessionSeq;
++        dragPhase = 'dragging';
++        if (sourceEl) sourceEl._dragSid = activeDragSessionId;
++        return activeDragSessionId;
++    }
++
++    // Single idempotent teardown. Safe to call any number of times and from any
++    // termination path (drop, dragend, pointercancel, blur, visibilitychange,
++    // screen change). Never throws.
++    function cleanupDrag(/* reason */) {
++        dragPhase = 'cleanup';
++        removeDragGhost();
++        hidePieceInvTooltip();
++        _tooltipKey = null;
++        // Clear ALL transient drag classes wherever they may have stuck.
++        document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
++        document.querySelectorAll('.cell.drop-valid, .cell.drop-invalid')
++            .forEach(el => el.classList.remove('drop-valid', 'drop-invalid'));
++        draggedPiece = null;
++        draggedItem = null;
++        activeDragSessionId = null;
++        dragPhase = 'idle';
++    }
++
+     function createDragGhost(symbol) {
+         removeDragGhost();
+         dragGhost = document.createElement('div');
+         dragGhost.className = 'drag-ghost';
+-        dragGhost.textContent = symbol;
++        dragGhost.textContent = symbol;   // separate preview: never mutates the source asset
+         dragGhost.style.pointerEvents = 'none';
+         document.body.appendChild(dragGhost);
++        // Named handler => addEventListener de-dups; only ever one registration.
+         document.addEventListener('dragover', moveDragGhost);
+     }
+ 
++    // rAF-throttled: at most ONE position update per animation frame regardless
++    // of how many dragover events fire — no heavy work in the move handler.
++    let _ghostRaf = 0;
++    let _ghostX = 0, _ghostY = 0;
+     function moveDragGhost(e) {
+-        if (dragGhost) {
+-            dragGhost.style.left = (e.clientX - 24) + 'px';
+-            dragGhost.style.top = (e.clientY - 24) + 'px';
+-        }
++        _ghostX = e.clientX; _ghostY = e.clientY;
++        if (_ghostRaf) return;
++        _ghostRaf = requestAnimationFrame(() => {
++            _ghostRaf = 0;
++            if (dragGhost) {
++                dragGhost.style.transform = `translate(${_ghostX - 24}px, ${_ghostY - 24}px)`;
++            }
++        });
+     }
+ 
+     function removeDragGhost() {
++        if (_ghostRaf) { cancelAnimationFrame(_ghostRaf); _ghostRaf = 0; }
+         if (dragGhost) {
+             dragGhost.remove();
+             dragGhost = null;
+@@ -704,6 +775,7 @@
+     const _piht = document.getElementById('piece-inv-hover-tooltip');
+     const _pihtSlots = _piht?.querySelector('.piht-slots');
+     const _pihtCount = _piht?.querySelector('.piht-count');
++    let _tooltipKey = null; // signature of the currently-shown tooltip (FPS guard)
+ 
+     function showPieceInvTooltip(piece, cell, canEquip, reason) {
+         if (!_piht || !_pihtSlots || !_pihtCount) return;
+@@ -713,6 +785,13 @@
+         const occupied = items.filter(Boolean).length;
+         const empty = slotCount - occupied;
+ 
++        // FPS fix: `dragover` fires many times per second over the same cell.
++        // Rebuilding the slot DOM and forcing synchronous layout on every tick is
++        // layout thrashing. Skip when nothing that affects the tooltip changed.
++        const key = `${cell.dataset.row},${cell.dataset.col}|${canEquip ? 1 : 0}|${reason || ''}|${occupied}/${slotCount}`;
++        if (key === _tooltipKey && _piht.style.display === 'block') return;
++        _tooltipKey = key;
++
+         _pihtSlots.innerHTML = '';
+         items.forEach((item, idx) => {
+             const slotEl = document.createElement('div');
+@@ -764,6 +843,7 @@
+ 
+     function hidePieceInvTooltip() {
+         if (_piht) _piht.style.display = 'none';
++        _tooltipKey = null;
+     }
+ 
+ 
+@@ -1301,8 +1381,8 @@
+         document.querySelectorAll('.cell.drop-valid, .cell.drop-invalid, .cell.dragging, .cell.setup-zone').forEach(el => {
+             el.classList.remove('drop-valid', 'drop-invalid', 'dragging', 'setup-zone');
+         });
+-        // Ensure drag ghost is removed
+-        removeDragGhost();
++        // Ensure any in-flight drag session is fully torn down on screen change.
++        cleanupDrag('screen-change');
+     }
+ 
+     function startGameFromSetup() {
