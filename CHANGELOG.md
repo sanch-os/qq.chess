@@ -1,6 +1,31 @@
 # Changelog - Исправление бага drag-and-drop
 
-## Версия: fix/drag-race-cleanup
+## Версия: fix/pointer-events-drag (актуальная)
+
+Перетаскивание фигур и предметов на экране расстановки полностью переписано с
+нативного HTML5 Drag & Drop (+polyfill `mobile-drag-drop`) на **Pointer Events API**.
+Это устраняет полностью сломанное перетаскивание после предыдущих правок и
+«фантомные» браузерные drag-события.
+
+### Что сделано
+- ✅ Единый путь для мыши и тача: `pointerdown` / `pointermove` / `pointerup` /
+  `pointercancel` (см. секцию «Drag & Drop» в `app.js`).
+- ✅ При захвате создаётся ghost-клон (`createDragGhost`), оригинал остаётся на месте
+  до подтверждения хода. Порог `DRAG_THRESHOLD` отличает клик от перетаскивания.
+- ✅ Ghost следует за курсором строго через `transform: translate(...)` (не left/top),
+  обновление троттлится через `requestAnimationFrame` (стабильные 60 FPS).
+- ✅ Подсветка допустимых/недопустимых клеток во время drag (`updateDragHover` +
+  `updateDragHighlight`) с hit-тестом через `document.elementFromPoint`.
+- ✅ Drop на допустимую клетку — фигура перемещается/предмет экипируется; на
+  недопустимую — фигура возвращается; ghost удаляется в любом случае.
+- ✅ Нет утечек слушателей: `window`-listeners снимаются в `teardownPointerListeners`,
+  очистка идемпотентна (`cleanupDrag`), safety-nets на `blur` / `visibilitychange` /
+  смену экрана / `pointercancel`.
+- ✅ Подавление «фантомного» нативного drag: `preventDefault` на `dragstart`
+  (на каждом источнике и глобально), `touch-action: none` на источниках.
+- ✅ Полифил `mobile-drag-drop` удалён из `index.html` и `app.js` за ненадобностью.
+
+## Версия: fix/drag-race-cleanup (предыдущая)
 
 ### 🔧 Основные исправления
 

@@ -5,13 +5,10 @@
 (function () {
     'use strict';
 
-    // Initialize Mobile Drag Drop polyfill for iOS/touch support
-    MobileDragDrop.polyfill({
-        dragImageTranslateOverride: MobileDragDrop.scrollBehaviourDragImageTranslateOverride
-    });
-    // Prevent default scroll behavior while dragging on touch devices
-    window.addEventListener('touchmove', function() {}, {passive: false});
-
+    // NOTE: The old `mobile-drag-drop` polyfill (native HTML5 DnD shim for touch)
+    // has been removed. Drag & drop is now built directly on the Pointer Events
+    // API (see the "Drag & Drop" section), which handles mouse + touch uniformly;
+    // the polyfill would otherwise fight the pointer gesture on touch devices.
 
     // --- State ---
     let engine = new ChessEngine();
@@ -132,17 +129,15 @@
         populateMenuBackground();
         showScreen('menu');
 
-        // Global safety nets: guarantee a drag session is torn down on every
-        // alternative termination path, not just drop/dragend.
-        // NB: we intentionally do NOT clean up on plain `pointerup`. During a
-        // native drag the browser suppresses pointer events, and the mobile-drag-
-        // drop polyfill uses pointerup to SYNTHESIZE the drop — cleaning up there
-        // would race the synthetic drop. drop/dragend/pointercancel already cover it.
-        window.addEventListener('pointercancel', () => cleanupDrag('pointercancel'));
-        window.addEventListener('blur', () => cleanupDrag('blur'));
+        // Global safety nets: guarantee any in-flight pointer drag is torn down
+        // (listeners + ghost + state) on every alternative termination path, so
+        // no event leaks and no orphan ghost can survive a lost gesture.
+        window.addEventListener('blur', () => cancelPointerDrag());
         document.addEventListener('visibilitychange', () => {
-            if (document.hidden) cleanupDrag('visibilitychange');
+            if (document.hidden) cancelPointerDrag();
         });
+        // Belt-and-suspenders: kill any native browser drag globally.
+        document.addEventListener('dragstart', (e) => e.preventDefault());
     }
 
     // --- Screen Management ---
@@ -222,9 +217,9 @@
                         cell.classList.add('fog-zone');
                     }
                     cell.addEventListener('click', onSetupCellClick);
-                    cell.addEventListener('dragover', onSetupDragOver);
-                    cell.addEventListener('drop', onSetupDrop);
-                    cell.addEventListener('dragleave', onSetupDragLeave);
+                    // Drop targets are hit-tested via elementFromPoint during the
+                    // pointer drag (see updateDragHover / performSetupDropOnCell),
+                    // so no native dragover/drop/dragleave listeners are needed.
                 } else {
                     cell.addEventListener('click', (e) => onGameCellClick(e));
                 }
@@ -291,11 +286,19 @@
                     pieceEl.appendChild(hatsContainer);
                 }
 
-                if (container === boardSetup && piece.color === 'white') {
-                    pieceEl.setAttribute('draggable', 'true');
-                    pieceEl.addEventListener('dragstart', onBoardPieceDragStart);
-                    // Fix: add dragend on the piece element so ghost is removed even when drop fails
-                    pieceEl.addEventListener('dragend', onDragEnd);
+                if (container === boardSetup) {
+                    const setupColor = isBlackSetup ? 'black' : 'white';
+                    if (piece.color === setupColor) {
+                        // Pointer-drag source: resolve live piece state at grab time.
+                        attachDragSource(pieceEl, () => {
+                            const p = engine.getPiece(r, c);
+                            if (!p || p.color !== setupColor) return null;
+                            return {
+                                payload: { kind: 'piece', piece: { source: 'board', row: r, col: c, type: p.type } },
+                                symbol: engine.getSymbol(p),
+                            };
+                        });
+                    }
                 }
 
                 cell.appendChild(pieceEl);
@@ -369,7 +372,6 @@
             const el = document.createElement('div');
             el.className = `inventory-item ${(!isInfinite && item.remaining <= 0) ? 'used' : ''}`;
             el.textContent = PIECE_SYMBOLS.white[item.type];
-            el.setAttribute('draggable', (isInfinite || item.remaining > 0) ? 'true' : 'false');
             el.dataset.type = item.type;
             el.dataset.index = index;
 
@@ -380,8 +382,18 @@
                 el.appendChild(count);
             }
 
-            el.addEventListener('dragstart', onInventoryDragStart);
-            el.addEventListener('dragend', onDragEnd);
+            // Pointer-drag source (piece from inventory).
+            attachDragSource(el, (node) => {
+                const type = node.dataset.type;
+                const idx = parseInt(node.dataset.index);
+                const invItem = inventory[idx];
+                const inf = isCreativeMode || (typeof isRaidTestMode !== 'undefined' && isRaidTestMode);
+                if (!invItem || (!inf && invItem.remaining <= 0)) return null;
+                return {
+                    payload: { kind: 'piece', piece: { source: 'inventory', type, index: idx } },
+                    symbol: PIECE_SYMBOLS.white[type],
+                };
+            });
             inventoryEl.appendChild(el);
         });
     }
@@ -403,10 +415,13 @@
                 el.innerHTML = `<div class="item-icon">${item.icon || '📦'}</div>
                                 <div class="item-badge" style="background:rgba(80,0,200,0.85); right:0; top:0;">∞</div>
                                 <div class="item-tooltip"><strong>${tName}</strong><br>${tDesc}</div>`;
-                el.setAttribute('draggable', 'true');
                 el.dataset.itemId = item.id;
-                el.addEventListener('dragstart', onStashDragStart);
-                el.addEventListener('dragend', onDragEnd);
+                // Pointer-drag source (item from catalog, infinite supply).
+                attachDragSource(el, (node) => {
+                    const cat = ITEMS_DB[node.dataset.itemId];
+                    if (!cat) return null;
+                    return { payload: { kind: 'item', item: { itemId: node.dataset.itemId } }, symbol: cat.icon || '📦' };
+                });
                 playerStashSetupEl.appendChild(el);
             });
         } else {
@@ -419,10 +434,14 @@
                 el.className = `stash-item rarity-${item.rarity || 'common'}`;
                 el.innerHTML = `<div class="item-icon">${item.icon || '📦'}</div>
                                 <div class="item-tooltip"><strong>${tName}</strong><br>${tDesc}</div>`;
-                el.setAttribute('draggable', 'true');
                 el.dataset.itemIndex = idx;
-                el.addEventListener('dragstart', onStashDragStart);
-                el.addEventListener('dragend', onDragEnd);
+                // Pointer-drag source (item from the player's stash).
+                attachDragSource(el, (node) => {
+                    const i = parseInt(node.dataset.itemIndex);
+                    const it = runManager.playerItems[i];
+                    if (!it) return null;
+                    return { payload: { kind: 'item', item: { itemIndex: i } }, symbol: it.icon || '📦' };
+                });
                 playerStashSetupEl.appendChild(el);
             });
         }
@@ -453,95 +472,149 @@
         });
     }
 
-    // --- Drag & Drop ---
-    function onInventoryDragStart(e) {
-        const el = e.target.closest('.inventory-item');
-        if (!el) return;
-        const type = el.dataset.type;
-        const idx = parseInt(el.dataset.index);
-        const invItem = inventory[idx];
-        const isInfinite = isCreativeMode || (typeof isRaidTestMode !== 'undefined' && isRaidTestMode);
-        
-        if (!invItem || (!isInfinite && invItem.remaining <= 0)) {
-            e.preventDefault();
-            return;
-        }
-        beginDragSession(el);
-        draggedPiece = { source: 'inventory', type, index: idx };
-        draggedItem = null;
-        createDragGhost(PIECE_SYMBOLS.white[type]);
-        el.classList.add('dragging');
-        e.dataTransfer.setData('text/plain', '');
-        e.dataTransfer.setDragImage(new Image(), 0, 0);
+    // ================================================================
+    //  Drag & Drop  —  Pointer Events implementation
+    //  Single code path for mouse + touch (pointerdown/move/up/cancel).
+    //  Native HTML5 drag (draggable/dragstart/drop) is NOT used; a
+    //  phantom browser drag is explicitly suppressed via preventDefault
+    //  on 'dragstart'. A ghost clone follows the pointer via CSS
+    //  transform (never left/top); the original element stays in place
+    //  until the drop is confirmed.
+    // ================================================================
+
+    const DRAG_THRESHOLD = 6; // px the pointer must travel before a drag begins
+
+    // Active pointer-drag descriptor (null when idle):
+    //   { pointerId, startX, startY, started, payload, symbol, sourceEl }
+    let pointerDrag = null;
+    let _hoverCell = null;        // setup cell currently highlighted during drag
+    let _dragJustEnded = false;   // swallow the click synthesized right after a drag
+
+    // Wire a DOM element up as a drag source. `resolve(el)` returns
+    //   { payload, symbol }  when a drag may start, or null otherwise.
+    //   payload = { kind:'piece', piece:{...} }  OR  { kind:'item', item:{...} }
+    function attachDragSource(el, resolve) {
+        el.addEventListener('pointerdown', (e) => onSourcePointerDown(e, el, resolve));
+        // Kill the browser's built-in element/image drag ("phantom" drag).
+        el.addEventListener('dragstart', (e) => e.preventDefault());
     }
 
-    function onStashDragStart(e) {
-        const el = e.target.closest('.stash-item');
-        if (!el) return;
+    function onSourcePointerDown(e, el, resolve) {
+        // Primary button only (mouse); touch/pen report button 0.
+        if (e.button !== undefined && e.button > 0) return;
+        const resolved = resolve(el);
+        if (!resolved) return;
 
-        let item;
-        let pendingItem; // resolved item ref; assigned to draggedItem AFTER the
-                         // session opens (beginDragSession clears drag state).
-        const isInfinite = isCreativeMode || (typeof isRaidTestMode !== 'undefined' && isRaidTestMode);
+        // Force-teardown anything still lingering, then arm a pending drag.
+        cancelPointerDrag();
+        _ghostX = e.clientX;
+        _ghostY = e.clientY;
+        pointerDrag = {
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            started: false,
+            payload: resolved.payload,
+            symbol: resolved.symbol,
+            sourceEl: el,
+        };
+        // Listen on window so move/up are still received once the pointer
+        // leaves the small source element (fixes "drag stops working").
+        window.addEventListener('pointermove', onPointerDragMove);
+        window.addEventListener('pointerup', onPointerDragUp);
+        window.addEventListener('pointercancel', onPointerDragCancel);
+    }
 
-        if (isInfinite) {
-            // Creative / Test-Drive: use item ID to clone fresh from catalog
-            const itemId = el.dataset.itemId;
-            item = ITEMS_DB[itemId];
-            if (!item) { e.preventDefault(); return; }
-            pendingItem = { itemId }; // store ID, not index
+    function onPointerDragMove(e) {
+        if (!pointerDrag || e.pointerId !== pointerDrag.pointerId) return;
+
+        if (!pointerDrag.started) {
+            const dx = e.clientX - pointerDrag.startX;
+            const dy = e.clientY - pointerDrag.startY;
+            if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return; // still a potential tap
+            beginActiveDrag();
+        }
+
+        moveGhost(e.clientX, e.clientY);
+        updateDragHover(e.clientX, e.clientY);
+    }
+
+    // Promote the armed pending drag into a live drag once past the threshold.
+    function beginActiveDrag() {
+        pointerDrag.started = true;
+        beginDragSession(pointerDrag.sourceEl); // opens the centralized session
+        const p = pointerDrag.payload;
+        if (p.kind === 'item') {
+            draggedItem = p.item;
+            draggedPiece = null;
         } else {
-            const idx = parseInt(el.dataset.itemIndex);
-            item = runManager.playerItems[idx];
-            if (!item) { e.preventDefault(); return; }
-            pendingItem = { itemIndex: idx };
+            draggedPiece = p.piece;
+            draggedItem = null;
+        }
+        createDragGhost(pointerDrag.symbol);
+        pointerDrag.sourceEl.classList.add('dragging');
+    }
+
+    function onPointerDragUp(e) {
+        if (!pointerDrag || e.pointerId !== pointerDrag.pointerId) return;
+        const wasStarted = pointerDrag.started;
+
+        if (wasStarted) {
+            const cell = cellFromPoint(e.clientX, e.clientY);
+            if (cell) performSetupDropOnCell(cell); // valid cell => move; else no-op => returns
+            // Suppress the click that the browser synthesizes after a drag so it
+            // does not immediately re-open the piece inventory modal.
+            _dragJustEnded = true;
+            setTimeout(() => { _dragJustEnded = false; }, 0);
         }
 
-        beginDragSession(el);
-        draggedItem = pendingItem;
-        draggedPiece = null;
-        createDragGhost(item.icon || '📦');
-        el.classList.add('dragging');
-        e.dataTransfer.setData('text/plain', '');
-        e.dataTransfer.setDragImage(new Image(), 0, 0);
+        teardownPointerListeners();
+        pointerDrag = null;
+        cleanupDrag('pointerup'); // idempotent teardown of ghost + state + highlights
     }
 
-    function onBoardPieceDragStart(e) {
-        const cell = e.target.closest('.cell');
-        if (!cell) return;
-        const row = parseInt(cell.dataset.row);
-        const col = parseInt(cell.dataset.col);
-        const piece = engine.getPiece(row, col);
-
-        const setupColor = isBlackSetup ? 'black' : 'white';
-        if (!piece || piece.color !== setupColor) {
-            e.preventDefault();
-            return;
-        }
-
-        beginDragSession(e.currentTarget);
-        draggedPiece = { source: 'board', row, col, type: piece.type };
-        draggedItem = null;
-        createDragGhost(engine.getSymbol(piece));
-        cell.classList.add('dragging');
-        e.dataTransfer.setData('text/plain', '');
-        e.dataTransfer.setDragImage(new Image(), 0, 0);
+    function onPointerDragCancel(e) {
+        if (!pointerDrag || e.pointerId !== pointerDrag.pointerId) return;
+        cancelPointerDrag();
     }
 
-    function onDragEnd(e) {
-        // Guard against a STALE dragend: `dragend` is delivered asynchronously and,
-        // under rapid successive drags, the PREVIOUS gesture's dragend can arrive
-        // AFTER the next gesture already started. If this element's session id no
-        // longer matches the active session, this dragend belongs to a finished
-        // session — ignore it so it cannot wipe the ghost/state of the LIVE drag.
-        const sid = e.currentTarget && e.currentTarget._dragSid;
-        if (sid !== activeDragSessionId) return;
-        cleanupDrag('dragend');
+    // Abort any pending/active pointer drag and detach the window listeners.
+    function cancelPointerDrag() {
+        teardownPointerListeners();
+        pointerDrag = null;
+        cleanupDrag('cancel');
     }
 
-    function onSetupDragOver(e) {
-        e.preventDefault();
-        const cell = e.target.closest('.cell');
+    function teardownPointerListeners() {
+        window.removeEventListener('pointermove', onPointerDragMove);
+        window.removeEventListener('pointerup', onPointerDragUp);
+        window.removeEventListener('pointercancel', onPointerDragCancel);
+    }
+
+    // Resolve the setup-board cell under a viewport point. The ghost is
+    // pointer-events:none so elementFromPoint never returns it.
+    function cellFromPoint(x, y) {
+        const el = document.elementFromPoint(x, y);
+        if (!el) return null;
+        const cell = el.closest('.cell');
+        if (!cell || !boardSetup.contains(cell)) return null;
+        return cell;
+    }
+
+    // Track hover during drag: clear the previous cell's highlight, highlight
+    // the new one. Runs highlight/tooltip logic only when the cell changes.
+    function updateDragHover(x, y) {
+        const cell = cellFromPoint(x, y);
+        if (cell === _hoverCell) return;
+        if (_hoverCell) _hoverCell.classList.remove('drop-valid', 'drop-invalid');
+        _hoverCell = cell;
+        if (!cell) { hidePieceInvTooltip(); return; }
+        updateDragHighlight(cell);
+    }
+
+    // Compute + apply the drop highlight (and equip tooltip) for a single cell.
+    // Called while dragging whenever the hovered cell changes.
+    function updateDragHighlight(cell) {
         if (!cell) return;
         const r = parseInt(cell.dataset.row);
         const c = parseInt(cell.dataset.col);
@@ -590,28 +663,11 @@
         }
     }
 
-    function onSetupDragLeave(e) {
-        const cell = e.target.closest('.cell');
-        if (cell) cell.classList.remove('drop-valid', 'drop-invalid');
-        hidePieceInvTooltip();
-    }
-
-    function onSetupDrop(e) {
-        e.preventDefault();
-        // Run the drop logic, then ALWAYS clean up exactly once. Previously the
-        // several early `return`s in the drop logic skipped the cleanup block and
-        // relied on `dragend` firing afterwards — which is not guaranteed (e.g.
-        // when the source element is re-rendered mid-drop). cleanupDrag() is
-        // idempotent, so calling it here is always safe.
-        try {
-            performSetupDrop(e);
-        } finally {
-            cleanupDrag('drop');
-        }
-    }
-
-    function performSetupDrop(e) {
-        const cell = e.target.closest('.cell');
+    // Apply the drop onto a specific setup cell. Called from pointerup.
+    // Teardown of the ghost / drag state / highlights is done by the caller
+    // (onPointerDragUp -> cleanupDrag), so this only mutates the board model.
+    // On a non-droppable target it simply returns early -> the piece stays put.
+    function performSetupDropOnCell(cell) {
         if (!cell) return;
         cell.classList.remove('drop-valid', 'drop-invalid');
 
@@ -692,6 +748,9 @@
     }
 
     function onSetupCellClick(e) {
+        // Ignore the click the browser synthesizes right after a pointer drag,
+        // otherwise a drag that ends on a piece would immediately open its modal.
+        if (_dragJustEnded) return;
         const cell = e.target.closest('.cell');
         if (!cell) return;
         const r = parseInt(cell.dataset.row);
@@ -709,7 +768,7 @@
     // --- Centralized drag-session lifecycle -------------------------------
     // Force-end any lingering session and open a brand-new one, stamping the
     // source element with the new session id. Guarantees a single active
-    // session and lets onDragEnd reject stale dragend events by id.
+    // session so a stale/late gesture can never clobber the current one.
     function beginDragSession(sourceEl) {
         cleanupDrag('new-drag');            // preparing: kill anything still lingering
         activeDragSessionId = ++dragSessionSeq;
@@ -730,29 +789,33 @@
         document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
         document.querySelectorAll('.cell.drop-valid, .cell.drop-invalid')
             .forEach(el => el.classList.remove('drop-valid', 'drop-invalid'));
+        _hoverCell = null;
         draggedPiece = null;
         draggedItem = null;
         activeDragSessionId = null;
         dragPhase = 'idle';
     }
 
+    // Build the ghost clone that trails the pointer. It is a lightweight preview
+    // element (never the source itself), positioned exclusively via CSS
+    // transform and made pointer-events:none so it never blocks hit-testing.
     function createDragGhost(symbol) {
         removeDragGhost();
         dragGhost = document.createElement('div');
         dragGhost.className = 'drag-ghost';
         dragGhost.textContent = symbol;   // separate preview: never mutates the source asset
         dragGhost.style.pointerEvents = 'none';
+        // Position at the current pointer immediately (no flash at 0,0).
+        dragGhost.style.transform = `translate(${_ghostX - 24}px, ${_ghostY - 24}px)`;
         document.body.appendChild(dragGhost);
-        // Named handler => addEventListener de-dups; only ever one registration.
-        document.addEventListener('dragover', moveDragGhost);
     }
 
-    // rAF-throttled: at most ONE position update per animation frame regardless
-    // of how many dragover events fire — no heavy work in the move handler.
+    // rAF-throttled: at most ONE transform update per animation frame regardless
+    // of how many pointermove events fire — keeps the drag at 60 FPS.
     let _ghostRaf = 0;
     let _ghostX = 0, _ghostY = 0;
-    function moveDragGhost(e) {
-        _ghostX = e.clientX; _ghostY = e.clientY;
+    function moveGhost(x, y) {
+        _ghostX = x; _ghostY = y;
         if (_ghostRaf) return;
         _ghostRaf = requestAnimationFrame(() => {
             _ghostRaf = 0;
@@ -768,7 +831,6 @@
             dragGhost.remove();
             dragGhost = null;
         }
-        document.removeEventListener('dragover', moveDragGhost);
     }
 
     // --- Task 4: Piece Inventory Hover Tooltip ---
@@ -1381,8 +1443,9 @@
         document.querySelectorAll('.cell.drop-valid, .cell.drop-invalid, .cell.dragging, .cell.setup-zone').forEach(el => {
             el.classList.remove('drop-valid', 'drop-invalid', 'dragging', 'setup-zone');
         });
-        // Ensure any in-flight drag session is fully torn down on screen change.
-        cleanupDrag('screen-change');
+        // Ensure any in-flight pointer drag is fully torn down on screen change
+        // (removes window listeners + ghost + state).
+        cancelPointerDrag();
     }
 
     function startGameFromSetup() {

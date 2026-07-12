@@ -1059,11 +1059,27 @@ body {
 
 .drag-ghost {
     position: fixed;
+    top: 0;
+    left: 0;
     pointer-events: none;
     z-index: 10000;
     font-size: 3rem;
     filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5));
-    transition: transform 0.05s ease;
+    /* Positioned purely via `transform: translate(...)`; no transition so the
+       ghost tracks the pointer 1:1 without trailing/lag. */
+    will-change: transform;
+}
+
+/* Pointer-drag sources: suppress touch scrolling / long-press selection so the
+   Pointer Events drag owns the gesture on both mouse and touch. */
+.inventory-item,
+.stash-item,
+.cell .piece[data-draggable],
+.setup-mode .cell .piece {
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 }
 
 /* AI Thinking Indicator */
