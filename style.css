@@ -457,6 +457,7 @@ body {
     position: relative;
     user-select: none;
     overflow: hidden;
+    touch-action: none;
 }
 
 .inventory-item:hover {
@@ -560,6 +561,7 @@ body {
         0 8px 40px rgba(0, 0, 0, 0.5),
         0 0 80px rgba(124, 111, 247, 0.08);
     position: relative;
+    touch-action: none;
 }
 
 .cell {
@@ -1289,6 +1291,7 @@ body {
     user-select: none;
     text-align: center;
     width: 120px;
+    touch-action: none;
 }
 
 .stash-item {
@@ -1306,6 +1309,7 @@ body {
     min-width: 0;
     user-select: none;
     text-align: center;
+    touch-action: none;
 }
 
 

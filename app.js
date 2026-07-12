@@ -528,11 +528,32 @@
             // Equipping item onto piece
             const setupColor = isBlackSetup ? 'black' : 'white';
             if (piece && piece.color === setupColor && piece instanceof PieceEntity) {
-                const canEquip = piece.getEmptySlot() !== -1;
+                let draggedItemData = null;
+                if (draggedItem.itemId) {
+                    draggedItemData = ITEMS_DB[draggedItem.itemId];
+                } else if (draggedItem.itemIndex !== undefined) {
+                    draggedItemData = runManager.playerItems[draggedItem.itemIndex];
+                }
+
+                let isAllowed = true;
+                if (draggedItemData && draggedItemData.allowedPieces) {
+                    if (!draggedItemData.allowedPieces.includes('all') && !draggedItemData.allowedPieces.includes(piece.type)) {
+                        isAllowed = false;
+                    }
+                }
+
+                const hasSlot = piece.getEmptySlot() !== -1;
+                const canEquip = hasSlot && isAllowed;
+                
+                let reason = '';
+                if (!isAllowed) reason = 'not_allowed';
+                else if (!hasSlot) reason = 'full';
+
                 if (canEquip) cell.classList.add('drop-valid');
                 else cell.classList.add('drop-invalid');
+                
                 // Show piece inventory tooltip
-                showPieceInvTooltip(piece, cell, canEquip);
+                showPieceInvTooltip(piece, cell, canEquip, reason);
             } else {
                 hidePieceInvTooltip();
             }
@@ -684,7 +705,7 @@
     const _pihtSlots = _piht?.querySelector('.piht-slots');
     const _pihtCount = _piht?.querySelector('.piht-count');
 
-    function showPieceInvTooltip(piece, cell, canEquip) {
+    function showPieceInvTooltip(piece, cell, canEquip, reason) {
         if (!_piht || !_pihtSlots || !_pihtCount) return;
 
         const items = piece.items || [null, null, null];
@@ -702,6 +723,7 @@
             } else if (!canEquip) {
                 slotEl.className = 'piht-slot full-slot';
                 slotEl.textContent = '✕';
+                if (reason === 'not_allowed') slotEl.style.color = 'var(--danger)';
             } else if (idx === occupied) {
                 // This is the next slot that will be filled
                 slotEl.className = 'piht-slot will-fill';
@@ -714,8 +736,16 @@
         });
 
         const usedText = `${occupied}/${slotCount}`;
-        _pihtCount.textContent = canEquip ? `Слотов: ${usedText} — свободно` : `Слотов: ${usedText} — полный`;
-        _pihtCount.className = `piht-count ${canEquip ? 'can-equip' : 'full'}`;
+        if (canEquip) {
+            _pihtCount.textContent = `Слотов: ${usedText} — свободно`;
+            _pihtCount.className = 'piht-count can-equip';
+        } else if (reason === 'not_allowed') {
+            _pihtCount.textContent = `Предмет не подходит`;
+            _pihtCount.className = 'piht-count full';
+        } else {
+            _pihtCount.textContent = `Слотов: ${usedText} — полный`;
+            _pihtCount.className = 'piht-count full';
+        }
 
         // Position above the cell
         const rect = cell.getBoundingClientRect();
