@@ -526,6 +526,7 @@ body {
 .board-with-labels {
     display: flex;
     align-items: stretch;
+    position: relative;
 }
 
 .board-labels-left, .board-labels-right {
@@ -2214,4 +2215,634 @@ body {
     color: var(--text-muted);
     text-align: center;
     padding: 8px 0;
+}
+
+/* ============================================
+   RAID / EXTRACTION UI
+   ============================================ */
+
+/* --- Raid button in main menu --- */
+.raid-btn {
+    background: linear-gradient(135deg, rgba(220, 80, 50, 0.25), rgba(180, 50, 30, 0.15));
+    border: 1px solid rgba(220, 100, 60, 0.5);
+    color: var(--text-primary);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.25s ease;
+}
+.raid-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,100,60,0.1), transparent);
+    opacity: 0;
+    transition: opacity 0.25s;
+}
+.raid-btn:hover {
+    border-color: rgba(255, 120, 70, 0.8);
+    box-shadow: 0 0 20px rgba(220, 80, 50, 0.35), 0 4px 16px rgba(0,0,0,0.4);
+    transform: translateY(-1px);
+}
+.raid-btn:hover::before { opacity: 1; }
+.raid-btn .btn-icon { filter: drop-shadow(0 0 6px rgba(255,120,60,0.7)); }
+
+/* --- Modal close X button (generic) --- */
+.modal-close-x {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--glass-border);
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    z-index: 10;
+}
+.modal-close-x:hover {
+    background: rgba(240, 72, 72, 0.15);
+    border-color: rgba(240, 72, 72, 0.4);
+    color: var(--danger);
+}
+
+/* ===== FACTION SELECT MODAL ===== */
+.raid-faction-modal {
+    width: 500px;
+    max-width: 94vw;
+    text-align: center;
+    padding: 32px 28px 28px;
+    position: relative;
+}
+.raid-modal-header { margin-bottom: 24px; }
+.raid-modal-icon {
+    font-size: 3rem;
+    line-height: 1;
+    margin-bottom: 10px;
+    filter: drop-shadow(0 0 12px rgba(255,120,60,0.5));
+}
+.raid-faction-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+.raid-faction-card {
+    background: rgba(255,255,255,0.04);
+    border: 2px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 24px 16px 20px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.25s ease;
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+.raid-faction-card:hover { transform: translateY(-3px); }
+.faction-badge {
+    font-size: 2.8rem;
+    line-height: 1;
+    margin-bottom: 4px;
+}
+.faction-name {
+    font-size: 1.3rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    font-family: var(--font-display);
+}
+.faction-desc {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+.faction-tag {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 4px 12px;
+    border-radius: 20px;
+    margin-top: 6px;
+    text-transform: uppercase;
+}
+
+/* PMC card */
+.pmc-card {
+    border-color: rgba(100, 160, 255, 0.3);
+    background: linear-gradient(160deg, rgba(50, 100, 220, 0.12), rgba(20, 50, 120, 0.08));
+}
+.pmc-card:hover {
+    border-color: rgba(100, 160, 255, 0.7);
+    box-shadow: 0 8px 30px rgba(50, 100, 220, 0.25);
+    background: linear-gradient(160deg, rgba(50, 100, 220, 0.2), rgba(20, 50, 120, 0.12));
+}
+.pmc-tag {
+    background: rgba(100, 160, 255, 0.15);
+    border: 1px solid rgba(100, 160, 255, 0.35);
+    color: #80b4ff;
+}
+
+/* Scav card */
+.scav-card {
+    border-color: rgba(200, 100, 50, 0.3);
+    background: linear-gradient(160deg, rgba(180, 70, 30, 0.12), rgba(100, 40, 20, 0.08));
+}
+.scav-card:hover {
+    border-color: rgba(220, 100, 60, 0.7);
+    box-shadow: 0 8px 30px rgba(200, 80, 40, 0.25);
+    background: linear-gradient(160deg, rgba(180, 70, 30, 0.2), rgba(100, 40, 20, 0.12));
+}
+.scav-tag {
+    background: rgba(220, 100, 50, 0.15);
+    border: 1px solid rgba(220, 100, 50, 0.35);
+    color: #ff9060;
+}
+
+/* ===== TARKOV STASH MODAL ===== */
+.raid-stash-modal {
+    width: 700px;
+    max-width: 96vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 28px 24px;
+    position: relative;
+}
+.raid-stash-header {
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--glass-border);
+}
+.raid-stash-body {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 20px;
+}
+.raid-stash-section { display: flex; flex-direction: column; gap: 10px; }
+.raid-stash-section-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0;
+}
+.raid-stash-empty {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 20px;
+    border: 1px dashed var(--glass-border);
+    border-radius: 8px;
+    margin: 0;
+}
+
+/* Piece stash */
+.raid-piece-stash {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.raid-piece-chip {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-primary);
+}
+.raid-piece-chip .piece-icon { font-size: 1.3rem; }
+
+/* Tarkov-style item grid */
+.raid-item-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 8px;
+    min-height: 120px;
+}
+.raid-grid-cell {
+    aspect-ratio: 1;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+}
+.raid-grid-cell.has-item {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.15);
+}
+.raid-grid-cell.has-item:hover {
+    background: rgba(255,255,255,0.13);
+    border-color: var(--accent);
+}
+.raid-grid-cell .item-rarity-dot {
+    position: absolute;
+    bottom: 3px;
+    right: 3px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+}
+.raid-grid-cell[data-rarity="common"] .item-rarity-dot { background: #888; }
+.raid-grid-cell[data-rarity="uncommon"] .item-rarity-dot { background: #4c8; }
+.raid-grid-cell[data-rarity="rare"] .item-rarity-dot { background: #48f; }
+.raid-grid-cell[data-rarity="epic"] .item-rarity-dot { background: #a4f; }
+.raid-grid-cell[data-rarity="legendary"] .item-rarity-dot { background: #fa0; }
+.raid-grid-tooltip {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10,10,20,0.95);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    white-space: nowrap;
+    font-size: 0.78rem;
+    color: var(--text-primary);
+    pointer-events: none;
+    z-index: 100;
+    opacity: 0;
+    transition: opacity 0.15s;
+    text-align: left;
+    min-width: 140px;
+    max-width: 200px;
+    white-space: normal;
+}
+.raid-grid-cell:hover .raid-grid-tooltip { opacity: 1; }
+
+/* ===== RAID LOOT MODAL ===== */
+.raid-loot-modal {
+    width: 560px;
+    max-width: 96vw;
+    padding: 28px 24px;
+    text-align: center;
+}
+.raid-loot-header { margin-bottom: 20px; }
+.raid-loot-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
+}
+.raid-loot-item {
+    background: rgba(255,255,255,0.05);
+    border: 2px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 12px 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    text-align: center;
+}
+.raid-loot-item:hover {
+    background: rgba(255,255,255,0.09);
+    border-color: rgba(255,255,255,0.25);
+    transform: translateY(-2px);
+}
+.raid-loot-item.selected {
+    border-color: var(--success);
+    background: rgba(72, 212, 160, 0.12);
+    box-shadow: 0 0 12px rgba(72, 212, 160, 0.2);
+}
+.raid-loot-item .item-icon { font-size: 1.8rem; line-height: 1; }
+.raid-loot-item .item-name {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    line-height: 1.3;
+}
+/* Rarity borders */
+.raid-loot-item.rarity-uncommon { border-color: rgba(76, 200, 120, 0.3); }
+.raid-loot-item.rarity-rare     { border-color: rgba(70, 130, 255, 0.35); }
+.raid-loot-item.rarity-epic     { border-color: rgba(160, 60, 240, 0.4); }
+.raid-loot-item.rarity-legendary{ border-color: rgba(255, 180, 0, 0.5); }
+
+.raid-loot-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .raid-faction-cards { grid-template-columns: 1fr; }
+    .raid-stash-body { grid-template-columns: 1fr; }
+    .raid-loot-grid { grid-template-columns: repeat(3, 1fr); }
+    .raid-item-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* ===== RAID VERTICAL SETUP LAYOUT ===== */
+.setup-vertical-layout {
+    flex-direction: column;
+    align-items: center;
+    max-width: 600px; /* Keep it relatively narrow like a mobile view/loadout screen */
+    margin: 0 auto;
+    gap: 16px;
+    padding-top: 10px;
+}
+
+.setup-vertical-layout .inventory-panel {
+    width: 100%;
+    max-width: 100%;
+    max-height: none;
+    overflow-y: visible;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* We can use flex 'order' inside the panel to match the mockup:
+   1. Pieces (inventory-grid)
+   2. Presets & Actions
+   3. Stash
+*/
+.setup-vertical-layout .panel-title[data-i18n="setup.army"],
+.setup-vertical-layout .panel-hint[data-i18n="setup.army_hint"] {
+    display: none; /* Hide 'Your Army' text to save space, let the pieces speak for themselves */
+}
+
+.setup-vertical-layout #inventory {
+    order: 1;
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 5px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 8px;
+    justify-content: center;
+}
+.setup-vertical-layout #inventory .inventory-item {
+    flex: 0 0 auto;
+}
+
+.setup-vertical-layout .inventory-actions {
+    order: 2;
+    margin-top: 0 !important;
+}
+
+.setup-vertical-layout #presets-panel {
+    order: 3;
+    margin-top: 0;
+    padding: 10px;
+}
+
+/* Old .stash-scroll-wrap inside inventory-panel is now gone in vertical mode.
+   The stash lives in .stash-floating-panel at the layout root level. */
+.setup-vertical-layout .stash-scroll-wrap {
+    display: none; /* hidden — stash-floating-panel takes its place */
+}
+
+/* --- Stash Floating Panel: overlaps the top of the board in vertical mode --- */
+.stash-floating-panel {
+    /* JS controls display via playerStashSetupEl's parent visibility.
+       In horizontal layout: hidden by default (JS shows when needed via container).
+       In vertical layout: CSS overrides to display:block with floating style. */
+    display: block; /* JS will hide via parent or playerStashSetupEl.style.display = none */
+    width: 100%;
+    padding: 10px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+}
+
+.setup-vertical-layout .stash-floating-panel {
+    /* In vertical raid mode: become a floating glass card that exactly overlaps the unused board area */
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    top: 8px; /* 8px gap from top of board */
+    left: 32px; /* 24px (left labels) + 8px gap from left edge of board */
+    z-index: 20;
+
+    /* Exact sizing: 75% of board height, but minus 16px total for the 8px gaps on all sides */
+    width: calc(var(--board-size) - 16px);
+    height: calc((var(--board-size) * 0.75) - 16px);
+    
+    margin: 0;
+
+    background: rgba(8, 8, 18, 0.75); /* Less transparent (was 0.45, now 0.75) */
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(124, 111, 247, 0.4); 
+    border-radius: var(--radius-md); /* Fully rounded since it doesn't touch the bottom edge anymore */
+    
+    box-sizing: border-box;
+    padding: 12px 14px;
+    box-shadow:
+        0 8px 32px rgba(0,0,0,0.6),
+        0 0 0 1px rgba(124,111,247,0.1),
+        inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+.setup-vertical-layout .stash-floating-panel .panel-title {
+    font-size: 0.8rem;
+    margin: 0 0 2px 0;
+    color: var(--accent-light);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+    flex-shrink: 0;
+}
+
+.setup-vertical-layout .stash-floating-panel .panel-hint {
+    flex-shrink: 0;
+}
+
+.setup-vertical-layout .stash-floating-panel .stash-grid {
+    flex: 1; /* Stretch to fill the whole panel */
+    max-height: none; /* Remove previous limits */
+    overflow-y: auto;
+    margin-top: 6px;
+    align-content: flex-start;
+}
+
+/* board-area: allow the floating stash panel to overlap the board itself */
+.setup-vertical-layout .board-area {
+    width: 100%;
+    position: relative;
+    /* padding-top removed so the stash panel overlaps the actual top rows of the chess board */
+}
+
+.setup-vertical-layout .setup-controls {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-primary);
+    padding: 10px 0;
+    z-index: 10;
+    box-shadow: 0 -10px 20px var(--bg-primary);
+}
+
+/* ================================================
+   TASK 1: Raid Test-Drive Toggle
+   ================================================ */
+.raid-test-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    padding: 8px 12px;
+    background: rgba(72, 212, 160, 0.07);
+    border: 1px solid rgba(72, 212, 160, 0.2);
+    border-radius: var(--radius-md);
+    transition: all var(--transition-normal);
+    user-select: none;
+}
+.raid-test-toggle-label:hover {
+    background: rgba(72, 212, 160, 0.14);
+    border-color: rgba(72, 212, 160, 0.4);
+}
+.raid-test-toggle-label input[type="checkbox"] { display: none; }
+.raid-test-toggle-track {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 11px;
+    border: 1px solid rgba(255,255,255,0.15);
+    flex-shrink: 0;
+    transition: background var(--transition-normal);
+}
+.raid-test-toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: var(--text-secondary);
+    border-radius: 50%;
+    transition: transform var(--transition-normal), background var(--transition-normal);
+}
+.raid-test-toggle-label input:checked + .raid-test-toggle-track { background: rgba(72,212,160,0.4); border-color: var(--success); }
+.raid-test-toggle-label input:checked + .raid-test-toggle-track .raid-test-toggle-thumb { transform: translateX(18px); background: var(--success); }
+.raid-test-toggle-text { font-size: 0.82rem; color: var(--text-primary); line-height: 1.3; }
+.raid-test-toggle-text small { display: block; font-size: 0.72rem; color: var(--text-muted); margin-top: 1px; }
+.raid-test-mode-active .raid-test-toggle-label { background: rgba(72,212,160,0.18); border-color: var(--success); box-shadow: 0 0 12px rgba(72,212,160,0.25); }
+
+/* ================================================
+   TASK 2: PC Scale Fix for Inventory Items
+   ================================================ */
+.inventory-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+    flex-shrink: 0;
+}
+.inventory-item {
+    aspect-ratio: 1;
+    width: clamp(52px, calc((100% - 24px) / 4), 70px);
+    min-width: 48px;
+    max-width: 70px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(1.5rem, 3.5vw, 2.2rem);
+    line-height: 1;
+    background: var(--surface);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    cursor: grab;
+    transition: all var(--transition-normal);
+    position: relative;
+    user-select: none;
+    overflow: hidden;
+    padding: 4px;
+}
+.inventory-item svg,
+.inventory-item .piece-svg-wrap { width: 100%; height: 100%; max-width: 50px; max-height: 50px; display: block; }
+
+/* ================================================
+   TASK 3: Fog of War on non-setup board cells
+   ================================================ */
+.setup-mode .cell.fog-zone { position: relative; }
+.setup-mode .cell.fog-zone::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(5, 5, 12, 0.62);
+    backdrop-filter: blur(1.5px);
+    pointer-events: none;
+    z-index: 2;
+    transition: opacity 0.3s ease;
+}
+.setup-mode .cell.fog-zone.drop-valid::after { opacity: 0; }
+
+/* ================================================
+   TASK 4: Piece Inventory Hover Tooltip
+   ================================================ */
+.piece-inv-hover-tooltip {
+    position: fixed;
+    z-index: 9999;
+    pointer-events: none;
+    background: rgba(10, 10, 20, 0.92);
+    border: 1px solid rgba(124, 111, 247, 0.45);
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+    min-width: 110px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(124,111,247,0.1);
+    backdrop-filter: blur(8px);
+    animation: pihtIn 0.15s ease;
+    transform-origin: bottom center;
+}
+@keyframes pihtIn {
+    from { opacity: 0; transform: scale(0.88) translateY(4px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.piht-header { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; font-weight: 600; }
+.piht-slots { display: flex; gap: 5px; margin-bottom: 6px; }
+.piht-slot {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+}
+.piht-slot.occupied { border-color: rgba(124,111,247,0.5); background: rgba(124,111,247,0.1); }
+.piht-slot.empty { border-style: dashed; border-color: rgba(255,255,255,0.15); }
+.piht-slot.will-fill { border-color: rgba(72,212,160,0.6); background: rgba(72,212,160,0.1); box-shadow: 0 0 8px rgba(72,212,160,0.3); }
+.piht-slot.full-slot { border-color: rgba(240,72,72,0.5); background: rgba(240,72,72,0.08); }
+.piht-count { font-size: 0.72rem; color: var(--text-secondary); text-align: center; }
+.piht-count.can-equip { color: var(--success); }
+.piht-count.full { color: var(--danger); }
+
+/* ================================================
+   FIX 2: Piece Inventory Modal — shifted to top in setup screen
+   so it overlaps fog zone (top 6 rows) and NOT the active placement area
+   ================================================ */
+/* When the body has class .setup-screen-active (added by JS on showScreen('setup')),
+   the piece-inv modal is positioned at the top of the overlay instead of center */
+.setup-screen-active #modal-piece-inv {
+    align-items: flex-start;
+    padding-top: 5vh;
+}
+/* Extra: reduce max-height so modal stays inside fog zone on small mobile */
+.setup-screen-active #modal-piece-inv .piece-inv-modal {
+    max-height: 70vh;
 }

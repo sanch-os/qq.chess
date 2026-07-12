@@ -22,6 +22,13 @@
     let isPvP = false;
     let isMirrorMode = false;
     let isBlackSetup = false; // true when black player is placing pieces in PvP
+    let isRaidMode = false;   // Raid (extraction) mode
+    let isRaidSetupMode = false; // Raid setup phase before choosing faction
+    let isRaidTestMode = false;  // Test-Drive: infinite resources in raid setup
+    let isRaidScav = false;   // true = playing as Scav (black)
+    let raidLootSelected = [];
+
+
 
     let currentScreen = 'menu';
     let selectedCell = null;
@@ -123,12 +130,59 @@
         Object.values(screens).forEach(s => s.classList.remove('active'));
         if (screens[name]) screens[name].classList.add('active');
         currentScreen = name;
+        // Toggle body class for CSS modal positioning
+        document.body.classList.toggle('setup-screen-active', name === 'setup');
+
         if (window.Tutorial && window.Tutorial.onScreenChange) {
             window.Tutorial.onScreenChange(name);
         }
         // Обновляем список пресетов при входе на экран расстановки
-        if (name === 'setup') renderPresetsList();
+        if (name === 'setup') {
+            renderPresetsList();
+            
+            // Toggle vertical layout for Raid mode
+            const setupLayout = document.querySelector('.setup-layout');
+            const startBtn = document.getElementById('btn-start-game');
+            const testToggleWrap = document.getElementById('raid-test-toggle-wrap');
+            const testToggleCheck = document.getElementById('raid-test-mode-toggle');
+            const stashFloatingPanel = document.querySelector('.stash-floating-panel');
+
+            if (setupLayout) {
+                const inventoryPanel = document.querySelector('.inventory-panel');
+                const boardWithLabels = document.querySelector('.board-with-labels');
+
+                if (typeof isRaidSetupMode !== 'undefined' && isRaidSetupMode) {
+                    setupLayout.classList.add('setup-vertical-layout');
+                    // Show test-drive toggle only in raid
+                    if (testToggleWrap) testToggleWrap.style.display = '';
+                    
+                    // Move stash to board-with-labels for exact absolute positioning over the board
+                    if (stashFloatingPanel && boardWithLabels && stashFloatingPanel.parentElement !== boardWithLabels) {
+                        boardWithLabels.appendChild(stashFloatingPanel);
+                    }
+                    if (stashFloatingPanel) stashFloatingPanel.style.display = 'flex';
+                } else {
+                    setupLayout.classList.remove('setup-vertical-layout');
+                    // Hide test toggle and reset it for non-raid modes
+                    if (testToggleWrap) testToggleWrap.style.display = 'none';
+                    if (testToggleCheck) testToggleCheck.checked = false;
+                    isRaidTestMode = false;
+                    
+                    // Move stash back to inventory panel (its default location in horizontal layout)
+                    if (stashFloatingPanel && inventoryPanel && stashFloatingPanel.parentElement !== inventoryPanel) {
+                        inventoryPanel.appendChild(stashFloatingPanel);
+                    }
+                    // Hide the floating stash panel — not used in horizontal layout
+                    if (stashFloatingPanel) stashFloatingPanel.style.display = 'none';
+                    
+                    if (startBtn && window.t) {
+                        startBtn.innerHTML = '<span class="btn-icon">▶</span> <span>' + window.t('setup.btn.start') + '</span>';
+                    }
+                }
+            }
+        }
     }
+
 
     // --- Build Board ---
     function buildBoard(container, mode) {
@@ -141,7 +195,12 @@
                 cell.dataset.col = c;
 
                 if (mode === 'setup') {
-                    if (r >= 6) cell.classList.add('setup-zone');
+                    const isZone = isBlackSetup ? r <= 1 : r >= 6;
+                    if (isZone) {
+                        cell.classList.add('setup-zone');
+                    } else {
+                        cell.classList.add('fog-zone');
+                    }
                     cell.addEventListener('click', onSetupCellClick);
                     cell.addEventListener('dragover', onSetupDragOver);
                     cell.addEventListener('drop', onSetupDrop);
@@ -284,9 +343,10 @@
 
     function renderInventory() {
         inventoryEl.innerHTML = '';
+        // Test-Drive overrides: behave like creative (infinite)
+        const isInfinite = isCreativeMode || isRaidTestMode;
         inventory.forEach((item, index) => {
             const el = document.createElement('div');
-            const isInfinite = isCreativeMode; // Creative = infinite
             el.className = `inventory-item ${(!isInfinite && item.remaining <= 0) ? 'used' : ''}`;
             el.textContent = PIECE_SYMBOLS.white[item.type];
             el.setAttribute('draggable', (isInfinite || item.remaining > 0) ? 'true' : 'false');
@@ -310,8 +370,11 @@
         if (!playerStashSetupEl) return;
         playerStashSetupEl.innerHTML = '';
 
-        if (isCreativeMode) {
-            // In creative mode — show ALL items from catalog, infinite supply
+        // Test-Drive works exactly like creative for items
+        const infiniteItems = isCreativeMode || isRaidTestMode;
+
+        if (infiniteItems) {
+            // In creative / test mode — show ALL items from catalog, infinite supply
             Object.values(ITEMS_DB).forEach((item) => {
                 const tName = window.t_item(item, 'name');
                 const tDesc = window.t_item(item, 'description');
@@ -321,7 +384,7 @@
                                 <div class="item-badge" style="background:rgba(80,0,200,0.85); right:0; top:0;">∞</div>
                                 <div class="item-tooltip"><strong>${tName}</strong><br>${tDesc}</div>`;
                 el.setAttribute('draggable', 'true');
-                el.dataset.itemId = item.id; // use item ID, not index
+                el.dataset.itemId = item.id;
                 el.addEventListener('dragstart', onStashDragStart);
                 el.addEventListener('dragend', onDragEnd);
                 playerStashSetupEl.appendChild(el);
@@ -377,7 +440,9 @@
         const type = el.dataset.type;
         const idx = parseInt(el.dataset.index);
         const invItem = inventory[idx];
-        if (!invItem || (!isCreativeMode && invItem.remaining <= 0)) {
+        const isInfinite = isCreativeMode || (typeof isRaidTestMode !== 'undefined' && isRaidTestMode);
+        
+        if (!invItem || (!isInfinite && invItem.remaining <= 0)) {
             e.preventDefault();
             return;
         }
@@ -394,8 +459,10 @@
         if (!el) return;
 
         let item;
-        if (isCreativeMode) {
-            // Creative: use item ID to clone fresh from catalog
+        const isInfinite = isCreativeMode || (typeof isRaidTestMode !== 'undefined' && isRaidTestMode);
+
+        if (isInfinite) {
+            // Creative / Test-Drive: use item ID to clone fresh from catalog
             const itemId = el.dataset.itemId;
             item = ITEMS_DB[itemId];
             if (!item) { e.preventDefault(); return; }
@@ -442,6 +509,7 @@
         // Also clear dragging class from any board cells
         document.querySelectorAll('.cell.dragging').forEach(c => c.classList.remove('dragging'));
         removeDragGhost();
+        hidePieceInvTooltip();
         draggedPiece = null;
         draggedItem = null;
     }
@@ -460,19 +528,26 @@
             // Equipping item onto piece
             const setupColor = isBlackSetup ? 'black' : 'white';
             if (piece && piece.color === setupColor && piece instanceof PieceEntity) {
-                if (piece.getEmptySlot() !== -1) cell.classList.add('drop-valid');
+                const canEquip = piece.getEmptySlot() !== -1;
+                if (canEquip) cell.classList.add('drop-valid');
                 else cell.classList.add('drop-invalid');
+                // Show piece inventory tooltip
+                showPieceInvTooltip(piece, cell, canEquip);
+            } else {
+                hidePieceInvTooltip();
             }
         } else if (draggedPiece) {
             const validZone = isBlackSetup ? (r <= 1) : (r >= 6);
             if (validZone) cell.classList.add('drop-valid');
             else cell.classList.add('drop-invalid');
+            hidePieceInvTooltip();
         }
     }
 
     function onSetupDragLeave(e) {
         const cell = e.target.closest('.cell');
         if (cell) cell.classList.remove('drop-valid', 'drop-invalid');
+        hidePieceInvTooltip();
     }
 
     function onSetupDrop(e) {
@@ -485,12 +560,14 @@
         const c = parseInt(cell.dataset.col);
         const piece = engine.getPiece(r, c);
 
+        const isInfinite = isCreativeMode || (typeof isRaidTestMode !== 'undefined' && isRaidTestMode);
+
         if (draggedItem !== null) {
             // Equip item to piece
             const setupColor = isBlackSetup ? 'black' : 'white';
             if (piece && piece.color === setupColor && piece instanceof PieceEntity) {
-                if (isCreativeMode && draggedItem.itemId) {
-                    // Creative mode: clone fresh item from catalog, bypass stash
+                if (isInfinite && draggedItem.itemId) {
+                    // Creative/Test-Drive mode: clone fresh item from catalog, bypass stash
                     const catalogItem = ITEMS_DB[draggedItem.itemId];
                     if (catalogItem) {
                         if (!catalogItem.allowedPieces.includes('all') && !catalogItem.allowedPieces.includes(piece.type)) {
@@ -521,14 +598,14 @@
                 if (piece.color !== setupColor) return;
                 
                 // Return items to stash
-                if (piece instanceof PieceEntity && !isCreativeMode) {
+                if (piece instanceof PieceEntity && !isInfinite) {
                     piece.getItems().forEach(item => {
                         runManager.playerItems.push(item);
                     });
                 }
                 
                 // Return piece to inventory
-                if (!isCreativeMode) {
+                if (!isInfinite) {
                     const invItem = inventory.find(i => i.type === piece.type);
                     if (invItem) invItem.remaining++;
                 }
@@ -537,14 +614,12 @@
 
             if (draggedPiece.source === 'inventory') {
                 const invItem = inventory[draggedPiece.index];
-                if (!invItem || (!isCreativeMode && invItem.remaining <= 0)) {
+                if (!invItem || (!isInfinite && invItem.remaining <= 0)) {
                     // Not enough pieces, but wait: if we swapped, maybe we just freed it up!
-                    // E.g. we drag a Queen over a Queen. The old Queen was returned, remaining++ just happened.
-                    // So we must check again.
-                    if (!isCreativeMode && invItem.remaining <= 0) return;
+                    if (!isInfinite && invItem.remaining <= 0) return;
                 }
                 engine.board[r][c] = new PieceEntity(draggedPiece.type, setupColor);
-                if (!isCreativeMode) invItem.remaining--;
+                if (!isInfinite) invItem.remaining--;
             } else if (draggedPiece.source === 'board') {
                 const p = engine.board[draggedPiece.row][draggedPiece.col];
                 engine.board[draggedPiece.row][draggedPiece.col] = null;
@@ -603,6 +678,64 @@
         }
         document.removeEventListener('dragover', moveDragGhost);
     }
+
+    // --- Task 4: Piece Inventory Hover Tooltip ---
+    const _piht = document.getElementById('piece-inv-hover-tooltip');
+    const _pihtSlots = _piht?.querySelector('.piht-slots');
+    const _pihtCount = _piht?.querySelector('.piht-count');
+
+    function showPieceInvTooltip(piece, cell, canEquip) {
+        if (!_piht || !_pihtSlots || !_pihtCount) return;
+
+        const items = piece.items || [null, null, null];
+        const slotCount = items.length;
+        const occupied = items.filter(Boolean).length;
+        const empty = slotCount - occupied;
+
+        _pihtSlots.innerHTML = '';
+        items.forEach((item, idx) => {
+            const slotEl = document.createElement('div');
+            if (item) {
+                slotEl.className = 'piht-slot occupied';
+                slotEl.textContent = item.icon || '📦';
+                slotEl.title = window.t_item ? (window.t_item(item, 'name') || item.id) : (item.id || '');
+            } else if (!canEquip) {
+                slotEl.className = 'piht-slot full-slot';
+                slotEl.textContent = '✕';
+            } else if (idx === occupied) {
+                // This is the next slot that will be filled
+                slotEl.className = 'piht-slot will-fill';
+                slotEl.textContent = '+';
+            } else {
+                slotEl.className = 'piht-slot empty';
+                slotEl.textContent = '';
+            }
+            _pihtSlots.appendChild(slotEl);
+        });
+
+        const usedText = `${occupied}/${slotCount}`;
+        _pihtCount.textContent = canEquip ? `Слотов: ${usedText} — свободно` : `Слотов: ${usedText} — полный`;
+        _pihtCount.className = `piht-count ${canEquip ? 'can-equip' : 'full'}`;
+
+        // Position above the cell
+        const rect = cell.getBoundingClientRect();
+        _piht.style.display = 'block';
+        _piht.style.left = (rect.left + rect.width / 2 - _piht.offsetWidth / 2) + 'px';
+        _piht.style.top  = (rect.top - _piht.offsetHeight - 8) + 'px';
+
+        // Re-clamp horizontally to viewport
+        const tw = _piht.offsetWidth;
+        const vw = window.innerWidth;
+        let left = rect.left + rect.width / 2 - tw / 2;
+        if (left < 6) left = 6;
+        if (left + tw > vw - 6) left = vw - tw - 6;
+        _piht.style.left = left + 'px';
+    }
+
+    function hidePieceInvTooltip() {
+        if (_piht) _piht.style.display = 'none';
+    }
+
 
     function updateStartButton() {
         const btn = document.getElementById('btn-start-game');
@@ -901,7 +1034,12 @@
         }
 
         document.getElementById('btn-start-game').addEventListener('click', () => {
-            startGameFromSetup();
+            if (isRaidSetupMode) {
+                if (!engine.hasKing('white')) return; // Require king placement
+                document.getElementById('modal-raid').classList.add('active');
+            } else {
+                startGameFromSetup();
+            }
         });
 
         document.getElementById('btn-back-menu').addEventListener('click', () => {
@@ -1202,6 +1340,11 @@
             document.getElementById('run-gold').textContent = '';
             document.getElementById('run-round').textContent = window.t('run.creative_bot');
             document.getElementById('btn-undo').style.display = 'block';
+        } else if (isRaidMode) {
+            _placeScavBotPieces();
+            document.getElementById('run-gold').textContent = '';
+            document.getElementById('run-round').textContent = 'Рейд (ЧВК)';
+            document.getElementById('btn-undo').style.display = 'none'; // No undo in raids!
         } else if (isMirrorMode) {
             engine.setupBlackMirror();
             document.getElementById('run-gold').textContent = '';
@@ -1392,9 +1535,10 @@
 
         const hasEmptySlot = piece.getEmptySlot() !== -1;
 
-        // In creative mode — show full catalog; else show player stash
-        const sourceItems = isCreativeMode
-            ? Object.values(ITEMS_DB).map((item, idx) => ({ item, idx: item.id }))
+        // In creative or test-drive mode — show full catalog; else show player stash
+        const isCatalogMode = isCreativeMode || isRaidTestMode;
+        const sourceItems = isCatalogMode
+            ? Object.values(ITEMS_DB).map((item) => ({ item, idx: item.id }))
             : runManager.playerItems.map((item, idx) => ({ item, idx }));
 
         const visibleItems = sourceItems.filter(x => x.item);
@@ -1419,7 +1563,7 @@
 
             const tName = window.t_item(item, 'name');
             const tDesc = window.t_item(item, 'description');
-            const infBadge = isCreativeMode ? `<span style="color:#a78bfa;font-size:0.75em;"> ∞</span>` : '';
+            const infBadge = isCatalogMode ? `<span style="color:#a78bfa;font-size:0.75em;"> ∞</span>` : '';
 
             el.innerHTML = `
                 <div class="stash-item-icon-wrap">${item.icon || '📦'}</div>
@@ -1429,7 +1573,7 @@
 
             if (canEquip) {
                 el.addEventListener('click', () => {
-                    isCreativeMode ? equipItemFromCatalog(item.id) : equipItemFromStash(idx);
+                    isCatalogMode ? equipItemFromCatalog(item.id) : equipItemFromStash(idx);
                 });
             }
 
@@ -1791,6 +1935,9 @@
     }
 
     function handleGameOver() {
+        // Raid mode intercept
+        if (isRaidMode) { _handleRaidGameOver(); return; }
+
         if (isRoguelikeMode && engine.gameResult === 'white') {
             // Capture values BEFORE onRoundWin() increments currentRound
             const goldBonus = runManager.computeGoldOnWin(engine);
@@ -2243,5 +2390,331 @@
             .forEach(preset => listEl.appendChild(buildPresetItem(preset, true)));
     }
 
+    /* ============================================
+       RAID (EXTRACTION) MODE
+       ============================================ */
+
+    function bindRaidEvents() {
+
+        // Open faction modal -> changed to open setup instead
+        document.getElementById('btn-raid')?.addEventListener('click', () => {
+            isRaidMode = true;
+            isRaidSetupMode = true;
+            isRoguelikeMode = false;
+            isCreativeMode  = false;
+            isPvP           = false;
+            isMirrorMode    = false;
+            isBlackSetup    = false;
+            raidLootSelected = [];
+
+            engine.reset();
+            runManager.playerItems = [];
+            resetInventory(false);
+            renderBoard(boardSetup);
+            renderStashSetup();
+            clearSetupOverlay();
+
+            const startBtn = document.getElementById('btn-start-game');
+            if (startBtn) {
+                startBtn.innerHTML = '<span class="btn-icon">⚔️</span> <span>В БОЙ</span>';
+            }
+
+            document.querySelector('.setup-layout')?.classList.add('setup-vertical-layout');
+            showScreen('setup');
+            updateStartButton();
+        });
+
+        document.getElementById('btn-raid-modal-close')?.addEventListener('click', () => {
+            document.getElementById('modal-raid').classList.remove('active');
+        });
+
+        // Faction buttons
+        document.getElementById('btn-raid-pmc')?.addEventListener('click', () => {
+            document.getElementById('modal-raid').classList.remove('active');
+            isRaidSetupMode = false;
+            isRaidScav = false;
+            startGameFromSetup(); // start with the setup they just made
+        });
+        document.getElementById('btn-raid-scav')?.addEventListener('click', () => {
+            document.getElementById('modal-raid').classList.remove('active');
+            isRaidSetupMode = false;
+            startScavRaid(); // bypass setup, generate random
+        });
+
+        // --- Task 1: Test-Drive toggle ---
+        document.getElementById('raid-test-mode-toggle')?.addEventListener('change', (e) => {
+            isRaidTestMode = e.target.checked;
+            // Re-render so stash and inventory reflect infinite mode
+            renderInventory();
+            renderStashSetup();
+            // Visual feedback on the wrapper
+            const wrap = document.getElementById('raid-test-toggle-wrap');
+            if (wrap) wrap.classList.toggle('raid-test-mode-active', isRaidTestMode);
+        });
+
+
+        document.getElementById('btn-raid-stash')?.addEventListener('click', () => {
+            renderRaidStash();
+            document.getElementById('modal-raid-stash').classList.add('active');
+        });
+        document.getElementById('btn-raid-stash-close')?.addEventListener('click', () => {
+            document.getElementById('modal-raid-stash').classList.remove('active');
+        });
+
+        // Loot confirm / skip
+        document.getElementById('btn-raid-loot-confirm')?.addEventListener('click', confirmRaidLoot);
+        document.getElementById('btn-raid-loot-skip')?.addEventListener('click', () => {
+            document.getElementById('modal-raid-loot').classList.remove('active');
+            showScreen('menu');
+        });
+    }
+
+    // ── Start a Scav raid (Bypasses setup) ─────────────────────────────────
+    function startScavRaid() {
+        isRaidScav = true;
+        engine.reset();
+        runManager.playerItems = [];
+        
+        _placeScavPlayerPieces();  // random black pieces, top half
+        _placePMCBotPieces();      // white PMC bot in bottom half
+
+        // Start the game manually without startGameFromSetup (since we skipped the normal flow)
+        engine.currentTurn = 'white';
+        engine.moveHistory = [];
+        engine.gameOver = false;
+        engine.gameResult = null;
+        engine.gameResultReason = '';
+        lastMove = null;
+        capturedPieces = { white: [], black: [] };
+
+        showScreen('game');
+        renderBoard(boardGame);
+        updateGameStatus();
+        renderMoveHistory();
+        renderIngameStash();
+
+        // White bot moves first
+        setTimeout(() => {
+            if (!engine.gameOver) {
+                ai.makeMove(engine, 'white');
+                renderBoard(boardGame);
+                updateGameStatus();
+                renderMoveHistory();
+            }
+        }, 400);
+    }
+
+    function _pieceTypes(counts) {
+        const out = [];
+        for (const [type, n] of Object.entries(counts)) {
+            for (let i = 0; i < n; i++) out.push(type);
+        }
+        return out;
+    }
+
+    function _placeRandomInRows(types, color, rowStart, rowEnd) {
+        // collect free cells in the row range
+        const cells = [];
+        for (let r = rowStart; r <= rowEnd; r++)
+            for (let c = 0; c < 8; c++)
+                if (!engine.board[r][c]) cells.push([r, c]);
+        // shuffle
+        for (let i = cells.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [cells[i], cells[j]] = [cells[j], cells[i]];
+        }
+        const shuffled = _pieceTypes(types);
+        for (let i = 0; i < shuffled.length && i < cells.length; i++) {
+            const [r, c] = cells[i];
+            engine.board[r][c] = new PieceEntity(shuffled[i], color);
+        }
+    }
+
+    // Scav player: random black pieces in rows 0-3
+    function _placeScavPlayerPieces() {
+        const scavTypes = { king: 1, queen: 0, rook: 1, bishop: 1, knight: 1, pawn: 4 };
+        // shuffle a bit
+        const extraPool = ['queen','rook','bishop','knight','pawn'];
+        const extraCount = 2 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < extraCount; i++) {
+            const t = extraPool[Math.floor(Math.random() * extraPool.length)];
+            scavTypes[t] = (scavTypes[t] || 0) + 1;
+        }
+        _placeRandomInRows(scavTypes, 'black', 0, 3);
+    }
+
+    // PMC bot (white) in rows 4-7 (behind scav player)
+    function _placePMCBotPieces() {
+        _placeRandomInRows({ king: 1, queen: 1, rook: 2, bishop: 1, knight: 2, pawn: 5 }, 'white', 4, 7);
+    }
+
+    // PMC player (white): standard setup in rows 6-7
+    function _placePMCPlayerPieces() {
+        const backRank = ['rook','knight','bishop','queen','king','bishop','knight','rook'];
+        for (let c = 0; c < 8; c++) {
+            engine.board[7][c] = new PieceEntity(backRank[c], 'white');
+            engine.board[6][c] = new PieceEntity('pawn', 'white');
+        }
+    }
+
+    // Scav bot (black): random pieces in rows 0-3
+    function _placeScavBotPieces() {
+        _placeRandomInRows({ king: 1, rook: 1, bishop: 1, knight: 1, pawn: 5 }, 'black', 0, 3);
+    }
+
+    // ── Intercept: handled by inline check in handleGameOver above
+    function _handleRaidGameOver() {
+        const result = engine.gameResult;
+        // PMC (white) wins = white, Scav (black) wins = black
+        const playerWon = isRaidScav ? (result === 'black') : (result === 'white');
+
+        if (playerWon) {
+            _showRaidLootScreen();
+        } else {
+            // Loss — show simple game over
+            const icon  = document.getElementById('gameover-icon');
+            const title = document.getElementById('gameover-title');
+            const text  = document.getElementById('gameover-text');
+            const btnAgain = document.getElementById('btn-play-again');
+            const btnMenu  = document.getElementById('btn-to-menu');
+            if (icon)  icon.textContent  = '💀';
+            if (title) title.textContent = isRaidScav ? 'Дикий убит' : 'ЧВК разбит';
+            if (text)  text.textContent  = 'Вы потеряли рейд. Схрон не пострадал.';
+            if (btnAgain) {
+                btnAgain.textContent = 'Ещё раз';
+                const nb = btnAgain.cloneNode(true);
+                btnAgain.replaceWith(nb);
+                nb.addEventListener('click', () => {
+                    modalGameover.classList.remove('active');
+                    document.getElementById('btn-raid').click();
+                });
+            }
+            if (btnMenu) {
+                const nm = btnMenu.cloneNode(true);
+                btnMenu.replaceWith(nm);
+                nm.addEventListener('click', () => { modalGameover.classList.remove('active'); showScreen('menu'); });
+            }
+            setTimeout(() => modalGameover.classList.add('active'), 500);
+        }
+    }
+
+    // ── Loot screen ───────────────────────────────────────────
+    function _showRaidLootScreen() {
+        raidLootSelected = [];
+        const allIds = Object.keys(ITEMS_DB);
+        // Generate 5 random items weighted slightly toward better rarities
+        const lootPool = [];
+        for (let i = 0; i < 5; i++) {
+            lootPool.push(allIds[Math.floor(Math.random() * allIds.length)]);
+        }
+
+        const grid = document.getElementById('raid-loot-grid');
+        if (!grid) return;
+        grid.innerHTML = '';
+
+        lootPool.forEach(itemId => {
+            const item = ITEMS_DB[itemId];
+            if (!item) return;
+            const name = window.t_item ? window.t_item(item, 'name') : (item.name?.ru || itemId);
+            const el   = document.createElement('div');
+            el.className = `raid-loot-item rarity-${item.rarity || 'common'}`;
+            el.dataset.itemId = itemId;
+            el.innerHTML = `
+                <div class="item-icon">${item.icon || '📦'}</div>
+                <div class="item-name">${name}</div>
+            `;
+            el.addEventListener('click', () => {
+                const idx = raidLootSelected.indexOf(itemId);
+                if (idx > -1) {
+                    raidLootSelected.splice(idx, 1);
+                    el.classList.remove('selected');
+                } else if (raidLootSelected.length < 3) {
+                    raidLootSelected.push(itemId);
+                    el.classList.add('selected');
+                }
+                const countEl = document.getElementById('raid-loot-count');
+                if (countEl) countEl.textContent = raidLootSelected.length;
+            });
+            grid.appendChild(el);
+        });
+
+        document.getElementById('raid-loot-count').textContent = '0';
+        document.getElementById('modal-raid-loot').classList.add('active');
+    }
+
+    function confirmRaidLoot() {
+        if (typeof ExtractionManager !== 'undefined' && raidLootSelected.length > 0) {
+            ExtractionManager.addItems(raidLootSelected);
+        }
+        document.getElementById('modal-raid-loot').classList.remove('active');
+        showScreen('menu');
+    }
+
+    // ── Stash viewer (Tarkov grid) ────────────────────────────
+    function renderRaidStash() {
+        const GRID_COLS = 6;
+        const GRID_CELLS = GRID_COLS * 4; // 24 cells
+
+        const stash = typeof ExtractionManager !== 'undefined'
+            ? ExtractionManager.getStash()
+            : { items: [], extraPieces: [] };
+
+        // --- Piece stash ---
+        const piecesEl     = document.getElementById('raid-stash-pieces');
+        const piecesEmpty  = document.getElementById('raid-stash-pieces-empty');
+        if (piecesEl) {
+            piecesEl.innerHTML = '';
+            if (stash.extraPieces.length === 0) {
+                piecesEmpty && (piecesEmpty.style.display = '');
+            } else {
+                piecesEmpty && (piecesEmpty.style.display = 'none');
+                stash.extraPieces.forEach(p => {
+                    const chip = document.createElement('div');
+                    chip.className = 'raid-piece-chip';
+                    const sym = (typeof PIECE_SYMBOLS !== 'undefined' && PIECE_SYMBOLS.white?.[p.type]) || '♟';
+                    chip.innerHTML = `<span class="piece-icon">${sym}</span> ${p.type}`;
+                    piecesEl.appendChild(chip);
+                });
+            }
+        }
+
+        // --- Item grid (Tarkov-style) ---
+        const gridEl    = document.getElementById('raid-stash-items');
+        const itemEmpty = document.getElementById('raid-stash-items-empty');
+        if (gridEl) {
+            gridEl.innerHTML = '';
+            if (stash.items.length === 0) {
+                itemEmpty && (itemEmpty.style.display = '');
+            } else {
+                itemEmpty && (itemEmpty.style.display = 'none');
+                // Fill grid cells
+                for (let i = 0; i < GRID_CELLS; i++) {
+                    const cell = document.createElement('div');
+                    const itemId = stash.items[i];
+                    if (itemId && ITEMS_DB[itemId]) {
+                        const item = ITEMS_DB[itemId];
+                        const name = window.t_item ? window.t_item(item, 'name') : (item.name?.ru || itemId);
+                        const desc = window.t_item ? window.t_item(item, 'description') : (item.description?.ru || '');
+                        cell.className = 'raid-grid-cell has-item';
+                        cell.dataset.rarity = item.rarity || 'common';
+                        cell.innerHTML = `
+                            ${item.icon || '📦'}
+                            <span class="item-rarity-dot"></span>
+                            <div class="raid-grid-tooltip">
+                                <strong>${name}</strong><br>
+                                <span style="opacity:0.7; font-size:0.75em;">${desc}</span>
+                            </div>
+                        `;
+                    } else {
+                        cell.className = 'raid-grid-cell';
+                    }
+                    gridEl.appendChild(cell);
+                }
+            }
+        }
+    }
+
     init();
+    bindRaidEvents();
 })();
+
