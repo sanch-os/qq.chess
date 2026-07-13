@@ -87,7 +87,9 @@ window.Multiplayer = (function () {
             }
 
             // Mark guest as online
-            db.ref(`rooms/${_roomCode}/guest/online`).set(true);
+            db.ref(`rooms/${_roomCode}/guest/online`).set(true).catch(err => {
+                if (_callbacks.onError) _callbacks.onError('Ошибка сети: ' + err.message);
+            });
             roomRef.onDisconnect().update({ 'guest/online': false });
 
             // Listen for host moves
@@ -106,6 +108,8 @@ window.Multiplayer = (function () {
             });
 
             if (_callbacks.onOpponentReady) _callbacks.onOpponentReady();
+        }).catch((error) => {
+            if (_callbacks.onError) _callbacks.onError('Ошибка подключения: ' + error.message);
         });
     }
 
