@@ -5,13 +5,13 @@
 
 // PLACEHOLDER config — user must replace with their Firebase project credentials
 const FIREBASE_CONFIG = {
-    apiKey: 'YOUR_API_KEY',
-    authDomain: 'YOUR_PROJECT.firebaseapp.com',
-    databaseURL: 'YOUR_PROJECT-default-rtdb.firebaseio.com',
-    projectId: 'YOUR_PROJECT_ID',
-    storageBucket: 'YOUR_PROJECT.appspot.com',
-    messagingSenderId: 'YOUR_SENDER_ID',
-    appId: 'YOUR_APP_ID'
+    apiKey: 'AIzaSyA4TjqkA4c-7wqRXrkESfWFH8MJGGtuFRo',
+    authDomain: 'multiplayer-90dc2.firebaseapp.com',
+    databaseURL: 'https://multiplayer-90dc2-default-rtdb.europe-west1.firebasedatabase.app',
+    projectId: 'multiplayer-90dc2',
+    storageBucket: 'multiplayer-90dc2.firebasestorage.app',
+    messagingSenderId: '144435271438',
+    appId: '1:144435271438:web:f28de3da70ccdf21cfa95f'
 };
 
 // Initialize Firebase app only once
