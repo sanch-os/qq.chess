@@ -196,7 +196,7 @@
                 // (raid, roguelike, creative / PvP). Mirror & classic have no item
                 // system, so the panel stays hidden (board top rows show through).
                 const usesItems = (typeof isRaidSetupMode !== 'undefined' && isRaidSetupMode)
-                    || isRoguelikeMode || isCreativeMode;
+                    || isRoguelikeMode || isCreativeMode || isFriendMode;
                 if (stashFloatingPanel) stashFloatingPanel.style.display = usesItems ? 'flex' : 'none';
 
                 // Start-button label: raid keeps its custom "⚔️ В БОЙ" (set on entry);
@@ -985,10 +985,11 @@
         const btn = document.getElementById('btn-start-game');
         const warning = document.getElementById('setup-warning');
         let canStart = false;
+        const requiredColor = isBlackSetup ? 'black' : 'white';
         for (let r = 0; r < 8; r++) {
             for (let c = 0; c < 8; c++) {
                 const p = engine.getPiece(r, c);
-                if (p && p.color === 'white' && p.type === 'king') canStart = true;
+                if (p && p.color === requiredColor && p.type === 'king') canStart = true;
             }
         }
         btn.disabled = !canStart;
@@ -1735,7 +1736,8 @@
 
     /** Show the coin result + 'Готов к расстановке' panel inside the lobby modal */
     function _showCoinResultPanel(assignedColor) {
-        if (statusEl) document.getElementById('friend-lobby-status').textContent = '';
+        const statusEl = document.getElementById('friend-lobby-status');
+        if (statusEl) statusEl.textContent = '';
         const resultIcon = document.getElementById('coin-result-icon');
         const resultText = document.getElementById('coin-result-text');
         const readyCount = document.getElementById('coin-ready-count');
