@@ -29,6 +29,7 @@
     let myAssignedColor = null; // 'white' | 'black' | null
     let friendSetupReady = false; // true = local player submitted setup
     let friendOpponentSetupReady = false; // true = opponent submitted setup
+    let friendOpponentSetupData = null; // data received from opponent
 
 
 
@@ -1213,6 +1214,11 @@
                     // HOST receives the colors confirmation (written by self — no-op for display)
                     // The host's color was already set above; this fires but we ignore it here.
                 },
+                onSetupSubmitted: (role, setupData) => {
+                    friendOpponentSetupData = setupData;
+                    friendOpponentSetupReady = true;
+                    _checkBothReady();
+                },
                 onBothLobbyReady: () => {
                     // Fix 3: Both players clicked 'Готов к расстановке' — proceed to setup
                     document.getElementById('modal-friend-lobby').style.display = 'none';
@@ -1253,6 +1259,11 @@
                     // Fix 2/3: GUEST receives color; show coin animation then ready panel
                     myAssignedColor = (hostColor === 'white') ? 'black' : 'white';
                     showCoinFlip(myAssignedColor);
+                },
+                onSetupSubmitted: (role, setupData) => {
+                    friendOpponentSetupData = setupData;
+                    friendOpponentSetupReady = true;
+                    _checkBothReady();
                 },
                 onBothLobbyReady: () => {
                     // Fix 3: Both players clicked 'Готов к расстановке' — proceed to setup
@@ -1428,6 +1439,21 @@
                 btn.innerHTML = '<span class="btn-icon">⏳</span> <span>Ожидание оппонента...</span>';
                 friendSetupReady = true;
                 if (window.Multiplayer) {
+                    const piecesData = [];
+                    const myColor = isBlackSetup ? 'black' : 'white';
+                    for (let r = 0; r < 8; r++) {
+                        for (let c = 0; c < 8; c++) {
+                            const p = engine.getPiece(r, c);
+                            if (p && p.color === myColor) {
+                                piecesData.push({ ...p, r, c });
+                            }
+                        }
+                    }
+                    window.Multiplayer.sendSetup({
+                        pieces: piecesData,
+                        items: runManager.playerItems
+                    });
+                    // Fallback to trigger opponent check
                     window.Multiplayer.sendMove({ type: 'setup_ready' });
                 }
                 _checkBothReady();
@@ -1762,6 +1788,7 @@
     function _startFriendSetup() {
         friendSetupReady = false;
         friendOpponentSetupReady = false;
+        friendOpponentSetupData = null;
         isRoguelikeMode = false; isCreativeMode = false; isPvP = true;
         isMirrorMode = false; isFriendMode = true;
         isRaidMode = false; isRaidSetupMode = false; isTestDriveMode = false;
@@ -1787,6 +1814,28 @@
     /** If both players said "ready", merge boards and start the game */
     function _checkBothReady() {
         if (!friendSetupReady || !friendOpponentSetupReady) return;
+        if (isFriendMode && !friendOpponentSetupData) return; // Wait for data to arrive over network
+
+        // Merge opponent data
+        if (isFriendMode && friendOpponentSetupData) {
+            const oppColor = isBlackSetup ? 'white' : 'black';
+            // Clear default pieces for opponent
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = engine.getPiece(r, c);
+                    if (p && p.color === oppColor) engine.removePiece(r, c);
+                }
+            }
+            // Add custom pieces
+            if (friendOpponentSetupData.pieces) {
+                friendOpponentSetupData.pieces.forEach(pData => {
+                    const newP = new PieceEntity(pData.type, pData.color);
+                    Object.assign(newP, pData);
+                    engine.setPiece(pData.r, pData.c, newP);
+                });
+            }
+        }
+
         // Both sides ready — start game without waiting for AI setup
         startGameFromSetup();
     }
