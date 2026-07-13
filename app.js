@@ -25,6 +25,10 @@
     let isTestDriveMode = false;  // Test-Drive: infinite resources in setup
     let isRaidScav = false;   // true = playing as Scav (black)
     let raidLootSelected = [];
+    // --- Friend Mode: assigned color after coin flip ---
+    let myAssignedColor = null; // 'white' | 'black' | null
+    let friendSetupReady = false; // true = local player submitted setup
+    let friendOpponentSetupReady = false; // true = opponent submitted setup
 
 
 
@@ -1187,18 +1191,31 @@
 
             const code = window.Multiplayer.createRoom({
                 onOpponentReady: () => {
-                    document.getElementById('room-waiting-text').textContent = '\u2705 \u0414\u0440\u0443\u0433 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u043b\u0441\u044f! \u041d\u0430\u0447\u0438\u043d\u0430\u0435\u043c \u0440\u0430\u0441\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0443...';
-                    setTimeout(() => {
+                    document.getElementById('room-waiting-text').textContent = '✅ Друг подключился! Бросаем монетку...';
+                    // HOST performs coin flip and writes to Firebase
+                    const hostGetsWhite = Math.random() < 0.5;
+                    window.Multiplayer.sendColors(hostGetsWhite ? 'white' : 'black');
+                    myAssignedColor = hostGetsWhite ? 'white' : 'black';
+                    showCoinFlip(myAssignedColor, () => {
                         document.getElementById('modal-friend-lobby').style.display = 'none';
-                        isRoguelikeMode = false; isCreativeMode = false; isPvP = true;
-                        isMirrorMode = false; isFriendMode = true; isBlackSetup = false;
-                        isRaidMode = false; isRaidSetupMode = false; isTestDriveMode = false;
-                        engine.reset(); resetInventory(false); runManager.playerItems = [];
-                        showScreen('setup');
-                    }, 1200);
+                        _startFriendSetup();
+                    });
+                },
+                onColorsAssigned: (hostColor) => {
+                    // GUEST receives color assignment
+                    myAssignedColor = (hostColor === 'white') ? 'black' : 'white';
+                    showCoinFlip(myAssignedColor, () => {
+                        document.getElementById('modal-friend-lobby').style.display = 'none';
+                        _startFriendSetup();
+                    });
                 },
                 onOpponentMove: (data) => {
-                    if (data.type === 'equip') { /* handle equip sync */ return; }
+                    if (data.type === 'equip') { return; }
+                    if (data.type === 'setup_ready') {
+                        friendOpponentSetupReady = true;
+                        _checkBothReady();
+                        return;
+                    }
                     const move = data.move;
                     if (move) { engine.executeMoveAndUpdate(move); renderBoard(boardGame); checkGameOver && checkGameOver(); }
                 }
@@ -1214,30 +1231,35 @@
         document.getElementById('btn-join-room-submit')?.addEventListener('click', () => {
             const code = document.getElementById('join-room-code-input').value.trim();
             if (code.length < 5) {
-                document.getElementById('friend-lobby-status').textContent = '\u26a0\ufe0f \u0412\u0432\u0435\u0434\u0438 5-\u0437\u043d\u0430\u0447\u043d\u044b\u0439 \u043a\u043e\u0434!';
+                document.getElementById('friend-lobby-status').textContent = '⚠️ Введи 5-значный код!';
                 return;
             }
-            document.getElementById('friend-lobby-status').textContent = '\u23f3 \u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0430\u0435\u043c\u0441\u044f...';
+            document.getElementById('friend-lobby-status').textContent = '⏳ Подключаемся...';
 
             window.Multiplayer.joinRoom(code, {
                 onOpponentReady: () => {
-                    document.getElementById('friend-lobby-status').textContent = '\u2705 \u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u043e!';
-                    setTimeout(() => {
+                    document.getElementById('friend-lobby-status').textContent = '✅ Подключено! Ждём жребия...';
+                },
+                onColorsAssigned: (hostColor) => {
+                    // GUEST: host wrote colors, we get the opposite
+                    myAssignedColor = (hostColor === 'white') ? 'black' : 'white';
+                    showCoinFlip(myAssignedColor, () => {
                         document.getElementById('modal-friend-lobby').style.display = 'none';
-                        isRoguelikeMode = false; isCreativeMode = false; isPvP = true;
-                        isMirrorMode = false; isFriendMode = true; isBlackSetup = false;
-                        isRaidMode = false; isRaidSetupMode = false; isTestDriveMode = false;
-                        engine.reset(); resetInventory(false); runManager.playerItems = [];
-                        showScreen('setup');
-                    }, 800);
+                        _startFriendSetup();
+                    });
                 },
                 onOpponentMove: (data) => {
-                    if (data.type === 'equip') { /* handle equip sync */ return; }
+                    if (data.type === 'equip') { return; }
+                    if (data.type === 'setup_ready') {
+                        friendOpponentSetupReady = true;
+                        _checkBothReady();
+                        return;
+                    }
                     const move = data.move;
                     if (move) { engine.executeMoveAndUpdate(move); renderBoard(boardGame); checkGameOver && checkGameOver(); }
                 },
                 onError: (msg) => {
-                    document.getElementById('friend-lobby-status').textContent = '\u274c ' + msg;
+                    document.getElementById('friend-lobby-status').textContent = '❌ ' + msg;
                 }
             });
         });
@@ -1368,8 +1390,18 @@
 
         document.getElementById('btn-start-game').addEventListener('click', () => {
             if (isRaidSetupMode) {
-                if (!engine.hasKing('white')) return; // Require king placement
+                if (!engine.hasKing('white')) return;
                 document.getElementById('modal-raid').classList.add('active');
+            } else if (isFriendMode) {
+                // T4: In Friend Mode — send setup data and wait for opponent
+                const btn = document.getElementById('btn-start-game');
+                btn.disabled = true;
+                btn.innerHTML = '<span class="btn-icon">⏳</span> <span>Ожидание оппонента...</span>';
+                friendSetupReady = true;
+                if (window.Multiplayer) {
+                    window.Multiplayer.sendMove({ type: 'setup_ready' });
+                }
+                _checkBothReady();
             } else {
                 startGameFromSetup();
             }
@@ -1615,7 +1647,99 @@
         cancelPointerDrag();
     }
 
+    // =====================================================
+    //  FRIEND MODE HELPERS
+    // =====================================================
+
+    /** Animate a coin flip and call cb() when done */
+    function showCoinFlip(assignedColor, cb) {
+        const overlay = document.getElementById('modal-friend-lobby');
+        const statusEl = document.getElementById('friend-lobby-status');
+        const mainEl = document.getElementById('friend-lobby-main');
+        const createdEl = document.getElementById('friend-room-created');
+        if (mainEl) mainEl.style.display = 'none';
+        if (createdEl) createdEl.style.display = 'none';
+        if (overlay) overlay.style.display = 'flex';
+
+        // Build coin flip HTML inside the lobby box
+        const box = overlay ? overlay.querySelector('.modal-box') : null;
+        if (!box) { if (cb) cb(); return; }
+
+        const colorLabel = assignedColor === 'white' ? '⬜ Белые' : '⬛ Чёрные';
+        const coinFace   = assignedColor === 'white'
+            ? '<svg viewBox="0 0 45 45" width="70" height="70"><circle cx="22.5" cy="22.5" r="20" fill="#f5f0e8" stroke="#ccc" stroke-width="1.5"/><text x="22.5" y="28" text-anchor="middle" font-size="22">♙</text></svg>'
+            : '<svg viewBox="0 0 45 45" width="70" height="70"><circle cx="22.5" cy="22.5" r="20" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/><text x="22.5" y="28" text-anchor="middle" font-size="22" fill="#e8e6f0">♟</text></svg>';
+
+        const flipDiv = document.createElement('div');
+        flipDiv.id = 'coin-flip-anim';
+        flipDiv.style.cssText = 'text-align:center; padding:20px 0;';
+        flipDiv.innerHTML = `
+            <p style="color:var(--text-muted);font-size:0.85em;margin-bottom:14px;">🎲 Бросаем монетку...</p>
+            <div id="coin-spin" style="display:inline-block; animation: coinSpin 1.5s ease-out forwards;">${coinFace}</div>
+            <p id="coin-result" style="font-size:1.4em;font-weight:bold;margin-top:16px;opacity:0;transition:opacity 0.5s;">
+                Вы играете за <span style="color:${assignedColor === 'white' ? '#f5f0e8' : '#9d93fa'}">${colorLabel}</span>!
+            </p>`;
+        // Remove old anim div if any
+        const old = document.getElementById('coin-flip-anim');
+        if (old) old.remove();
+        box.appendChild(flipDiv);
+
+        // Add keyframe if not present
+        if (!document.getElementById('coin-flip-style')) {
+            const st = document.createElement('style');
+            st.id = 'coin-flip-style';
+            st.textContent = `@keyframes coinSpin { 0%{transform:rotateY(0deg) scale(1)} 40%{transform:rotateY(720deg) scale(1.3)} 100%{transform:rotateY(1080deg) scale(1)} }`;
+            document.head.appendChild(st);
+        }
+
+        setTimeout(() => {
+            const res = document.getElementById('coin-result');
+            if (res) res.style.opacity = '1';
+        }, 1600);
+
+        setTimeout(() => {
+            const fd = document.getElementById('coin-flip-anim');
+            if (fd) fd.remove();
+            if (overlay) overlay.style.display = 'none';
+            if (cb) cb();
+        }, 3200);
+    }
+
+    /** Transition both players from lobby into the correct Setup screen */
+    function _startFriendSetup() {
+        friendSetupReady = false;
+        friendOpponentSetupReady = false;
+        isRoguelikeMode = false; isCreativeMode = false; isPvP = true;
+        isMirrorMode = false; isFriendMode = true;
+        isRaidMode = false; isRaidSetupMode = false; isTestDriveMode = false;
+        engine.reset(); resetInventory(false); runManager.playerItems = [];
+
+        // T3: lock setup side to assigned color
+        isBlackSetup = (myAssignedColor === 'black');
+
+        // Hide the "Edit Black" toggle — each player only edits their own side
+        const btnSetupBlack = document.getElementById('btn-setup-black');
+        if (btnSetupBlack) btnSetupBlack.style.display = 'none';
+
+        showScreen('setup');
+
+        // If Black — auto-switch the setup zone to the black side
+        if (isBlackSetup) {
+            // Simulate clicking "setup black" to initialise the black setup zone
+            isBlackSetup = false; // temporarily so startBlackSetup() does the right thing
+            startBlackSetup();
+        }
+    }
+
+    /** If both players said "ready", merge boards and start the game */
+    function _checkBothReady() {
+        if (!friendSetupReady || !friendOpponentSetupReady) return;
+        // Both sides ready — start game without waiting for AI setup
+        startGameFromSetup();
+    }
+
     function startGameFromSetup() {
+
         if (!engine.hasKing(isBlackSetup ? 'black' : 'white')) return;
 
         // PvP Creative: after white setup, go to black setup
@@ -2013,6 +2137,11 @@
 
         // In PvP both colors can click; in PvBot only white
         if (!isPvP && currentColor !== 'white') return;
+
+        // In Friend Mode: enforce turn order AND color ownership
+        if (isFriendMode && myAssignedColor) {
+            if (myAssignedColor !== currentColor) return; // not your turn
+        }
 
         const cell = e.target.closest('.cell');
         if (!cell) return;

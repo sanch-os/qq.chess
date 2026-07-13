@@ -56,6 +56,13 @@ window.Multiplayer = (function () {
             }
         });
 
+        // Listen for colors assignment (host writes, guest reads)
+        _on(db.ref(`rooms/${_roomCode}/colors`), 'value', (snap) => {
+            if (snap.val() && _callbacks.onColorsAssigned) {
+                _callbacks.onColorsAssigned(snap.val());
+            }
+        });
+
         // Listen for opponent moves
         _on(db.ref(`rooms/${_roomCode}/moves`), 'child_added', (snap) => {
             const data = snap.val();
@@ -92,6 +99,13 @@ window.Multiplayer = (function () {
             });
             roomRef.onDisconnect().update({ 'guest/online': false });
 
+            // Listen for colors assignment (guest reads what host wrote)
+            _on(db.ref(`rooms/${_roomCode}/colors`), 'value', (snap) => {
+                if (snap.val() && _callbacks.onColorsAssigned) {
+                    _callbacks.onColorsAssigned(snap.val());
+                }
+            });
+
             // Listen for host moves
             _on(db.ref(`rooms/${_roomCode}/moves`), 'child_added', (snap) => {
                 const data = snap.val();
@@ -118,6 +132,12 @@ window.Multiplayer = (function () {
         db.ref(`rooms/${_roomCode}/${_role}/setup`).set(setupData);
     }
 
+    /** Host calls this after coin flip to broadcast color assignment */
+    function sendColors(hostColor) {
+        if (!_roomCode) return;
+        db.ref(`rooms/${_roomCode}/colors`).set(hostColor);
+    }
+
     function sendMove(moveData) {
         if (!_roomCode || !_role) return;
         db.ref(`rooms/${_roomCode}/moves`).push({
@@ -142,5 +162,5 @@ window.Multiplayer = (function () {
     function getRoomCode() { return _roomCode; }
     function getRole() { return _role; }
 
-    return { createRoom, joinRoom, sendSetup, sendMove, sendEquip, cleanup, getRoomCode, getRole };
+    return { createRoom, joinRoom, sendSetup, sendColors, sendMove, sendEquip, cleanup, getRoomCode, getRole };
 })();
