@@ -1173,12 +1173,19 @@
         });
 
         document.getElementById('btn-friend-mode')?.addEventListener('click', () => {
+            // Fix 1: Reset ALL friend-mode stale state before opening lobby
+            myAssignedColor = null;
+            friendSetupReady = false;
+            friendOpponentSetupReady = false;
+            if (window.Multiplayer) window.Multiplayer.cleanup();
+
             isFriendMode = true;
             isPvP = true;
             document.getElementById('modal-friend-lobby').style.display = 'flex';
             document.getElementById('friend-lobby-status').textContent = '';
             document.getElementById('friend-lobby-main').style.display = '';
             document.getElementById('friend-room-created').style.display = 'none';
+            document.getElementById('friend-coin-result').style.display = 'none';
             document.getElementById('join-room-code-input').value = '';
         });
 
@@ -1192,22 +1199,23 @@
             const code = window.Multiplayer.createRoom({
                 onOpponentReady: () => {
                     document.getElementById('room-waiting-text').textContent = '✅ Друг подключился! Бросаем монетку...';
-                    // HOST performs coin flip and writes to Firebase
-                    const hostGetsWhite = Math.random() < 0.5;
-                    window.Multiplayer.sendColors(hostGetsWhite ? 'white' : 'black');
-                    myAssignedColor = hostGetsWhite ? 'white' : 'black';
-                    showCoinFlip(myAssignedColor, () => {
-                        document.getElementById('modal-friend-lobby').style.display = 'none';
-                        _startFriendSetup();
-                    });
+                    // Fix 2: Wait 500ms so guest's colors listener is guaranteed to be active
+                    setTimeout(() => {
+                        const hostGetsWhite = Math.random() < 0.5;
+                        window.Multiplayer.sendColors(hostGetsWhite ? 'white' : 'black');
+                        myAssignedColor = hostGetsWhite ? 'white' : 'black';
+                        // Fix 3: Show coin flip; the callback now shows the ready panel, not setup
+                        showCoinFlip(myAssignedColor);
+                    }, 500);
                 },
                 onColorsAssigned: (hostColor) => {
-                    // GUEST receives color assignment
-                    myAssignedColor = (hostColor === 'white') ? 'black' : 'white';
-                    showCoinFlip(myAssignedColor, () => {
-                        document.getElementById('modal-friend-lobby').style.display = 'none';
-                        _startFriendSetup();
-                    });
+                    // HOST receives the colors confirmation (written by self — no-op for display)
+                    // The host's color was already set above; this fires but we ignore it here.
+                },
+                onBothLobbyReady: () => {
+                    // Fix 3: Both players clicked 'Готов к расстановке' — proceed to setup
+                    document.getElementById('modal-friend-lobby').style.display = 'none';
+                    _startFriendSetup();
                 },
                 onOpponentMove: (data) => {
                     if (data.type === 'equip') { return; }
@@ -1241,12 +1249,14 @@
                     document.getElementById('friend-lobby-status').textContent = '✅ Подключено! Ждём жребия...';
                 },
                 onColorsAssigned: (hostColor) => {
-                    // GUEST: host wrote colors, we get the opposite
+                    // Fix 2/3: GUEST receives color; show coin animation then ready panel
                     myAssignedColor = (hostColor === 'white') ? 'black' : 'white';
-                    showCoinFlip(myAssignedColor, () => {
-                        document.getElementById('modal-friend-lobby').style.display = 'none';
-                        _startFriendSetup();
-                    });
+                    showCoinFlip(myAssignedColor);
+                },
+                onBothLobbyReady: () => {
+                    // Fix 3: Both players clicked 'Готов к расстановке' — proceed to setup
+                    document.getElementById('modal-friend-lobby').style.display = 'none';
+                    _startFriendSetup();
                 },
                 onOpponentMove: (data) => {
                     if (data.type === 'equip') { return; }
@@ -1266,9 +1276,27 @@
 
         // Close lobby modal
         document.getElementById('btn-friend-lobby-back')?.addEventListener('click', () => {
+            // Fix 6: If host, explicitly delete the room so guest gets a clean error
+            const role = window.Multiplayer.getRole();
+            const code = window.Multiplayer.getRoomCode();
+            if (role === 'host' && code) {
+                firebase.database().ref(`rooms/${code}`).remove();
+            }
             if (window.Multiplayer) window.Multiplayer.cleanup();
-            document.getElementById('modal-friend-lobby').style.display = 'none';
+            // Fix 1: Reset all friend-mode state
+            myAssignedColor = null;
+            friendSetupReady = false;
+            friendOpponentSetupReady = false;
             isFriendMode = false; isPvP = false;
+            document.getElementById('modal-friend-lobby').style.display = 'none';
+        });
+
+        // Fix 4: 'Готов к расстановке' button — write lobby_ready to Firebase
+        document.getElementById('btn-lobby-ready')?.addEventListener('click', () => {
+            const btn = document.getElementById('btn-lobby-ready');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Ждём второго игрока...'; }
+            document.getElementById('coin-ready-count').textContent = '1/2 игроков готовы...';
+            window.Multiplayer.sendLobbyReady();
         });
 
         document.getElementById('btn-mirror-match').addEventListener('click', () => {
@@ -1651,8 +1679,8 @@
     //  FRIEND MODE HELPERS
     // =====================================================
 
-    /** Animate a coin flip and call cb() when done */
-    function showCoinFlip(assignedColor, cb) {
+    /** Animate a coin flip then reveal the ready-up panel (Fix 3/5: no auto-navigation) */
+    function showCoinFlip(assignedColor) {
         const overlay = document.getElementById('modal-friend-lobby');
         const statusEl = document.getElementById('friend-lobby-status');
         const mainEl = document.getElementById('friend-lobby-main');
@@ -1663,7 +1691,7 @@
 
         // Build coin flip HTML inside the lobby box
         const box = overlay ? overlay.querySelector('.modal-box') : null;
-        if (!box) { if (cb) cb(); return; }
+        if (!box) { _showCoinResultPanel(assignedColor); return; }
 
         const colorLabel = assignedColor === 'white' ? '⬜ Белые' : '⬛ Чёрные';
         const coinFace   = assignedColor === 'white'
@@ -1697,12 +1725,35 @@
             if (res) res.style.opacity = '1';
         }, 1600);
 
+        // Fix 5: After animation, show the ready-up panel instead of auto-navigating
         setTimeout(() => {
             const fd = document.getElementById('coin-flip-anim');
             if (fd) fd.remove();
-            if (overlay) overlay.style.display = 'none';
-            if (cb) cb();
+            _showCoinResultPanel(assignedColor);
         }, 3200);
+    }
+
+    /** Show the coin result + 'Готов к расстановке' panel inside the lobby modal */
+    function _showCoinResultPanel(assignedColor) {
+        if (statusEl) document.getElementById('friend-lobby-status').textContent = '';
+        const resultIcon = document.getElementById('coin-result-icon');
+        const resultText = document.getElementById('coin-result-text');
+        const readyCount = document.getElementById('coin-ready-count');
+        const coinResultDiv = document.getElementById('friend-coin-result');
+        const mainEl2 = document.getElementById('friend-lobby-main');
+        const createdEl2 = document.getElementById('friend-room-created');
+        if (mainEl2) mainEl2.style.display = 'none';
+        if (createdEl2) createdEl2.style.display = 'none';
+        if (resultIcon) resultIcon.textContent = assignedColor === 'white' ? '⬜' : '⬛';
+        if (resultText) resultText.textContent = 'Вы играете за ' + (assignedColor === 'white' ? 'Белых' : 'Чёрных') + '!';
+        if (readyCount) readyCount.textContent = '0/2 игроков готовы';
+        if (coinResultDiv) coinResultDiv.style.display = '';
+        // Reset the ready button state
+        const readyBtn = document.getElementById('btn-lobby-ready');
+        if (readyBtn) { readyBtn.disabled = false; readyBtn.textContent = '🎯 Готов к расстановке!'; }
+        // Ensure the modal stays visible
+        const overlay = document.getElementById('modal-friend-lobby');
+        if (overlay) overlay.style.display = 'flex';
     }
 
     /** Transition both players from lobby into the correct Setup screen */

@@ -47,6 +47,7 @@ window.Multiplayer = (function () {
         // Auto-cleanup on disconnect
         roomRef.onDisconnect().remove();
 
+        // Write fresh room state — clears any stale data from previous sessions
         roomRef.set({ status: 'waiting', host: { online: true }, guest: { online: false } });
 
         // Listen for guest joining
@@ -56,7 +57,7 @@ window.Multiplayer = (function () {
             }
         });
 
-        // Listen for colors assignment (host writes, guest reads)
+        // Listen for colors assignment (host writes, but listener is here for symmetry)
         _on(db.ref(`rooms/${_roomCode}/colors`), 'value', (snap) => {
             if (snap.val() && _callbacks.onColorsAssigned) {
                 _callbacks.onColorsAssigned(snap.val());
@@ -78,6 +79,19 @@ window.Multiplayer = (function () {
             }
         });
 
+        // Listen for lobby ready state (both players must click 'Готов к расстановке')
+        function _checkLobbyReady() {
+            db.ref(`rooms/${_roomCode}/host/lobby_ready`).once('value').then(hostSnap => {
+                db.ref(`rooms/${_roomCode}/guest/lobby_ready`).once('value').then(guestSnap => {
+                    if (hostSnap.val() && guestSnap.val() && _callbacks.onBothLobbyReady) {
+                        _callbacks.onBothLobbyReady();
+                    }
+                });
+            });
+        }
+        _on(db.ref(`rooms/${_roomCode}/host/lobby_ready`), 'value', () => _checkLobbyReady());
+        _on(db.ref(`rooms/${_roomCode}/guest/lobby_ready`), 'value', () => _checkLobbyReady());
+
         return _roomCode;
     }
 
@@ -93,11 +107,8 @@ window.Multiplayer = (function () {
                 return;
             }
 
-            // Mark guest as online
-            db.ref(`rooms/${_roomCode}/guest/online`).set(true).catch(err => {
-                if (_callbacks.onError) _callbacks.onError('Ошибка сети: ' + err.message);
-            });
-            roomRef.onDisconnect().update({ 'guest/online': false });
+            // FIX: Subscribe to colors BEFORE setting guest/online=true, so the
+            // listener is guaranteed to be active when the host writes colors.
 
             // Listen for colors assignment (guest reads what host wrote)
             _on(db.ref(`rooms/${_roomCode}/colors`), 'value', (snap) => {
@@ -121,6 +132,26 @@ window.Multiplayer = (function () {
                 }
             });
 
+            // Listen for lobby ready state (both players must click 'Готов к расстановке')
+            function _checkLobbyReady() {
+                db.ref(`rooms/${_roomCode}/host/lobby_ready`).once('value').then(hostSnap => {
+                    db.ref(`rooms/${_roomCode}/guest/lobby_ready`).once('value').then(guestSnap => {
+                        if (hostSnap.val() && guestSnap.val() && _callbacks.onBothLobbyReady) {
+                            _callbacks.onBothLobbyReady();
+                        }
+                    });
+                });
+            }
+            _on(db.ref(`rooms/${_roomCode}/host/lobby_ready`), 'value', () => _checkLobbyReady());
+            _on(db.ref(`rooms/${_roomCode}/guest/lobby_ready`), 'value', () => _checkLobbyReady());
+
+            // FIX: Set guest/online AFTER all listeners are attached — prevents the host
+            // from writing colors before the guest's colors listener is ready.
+            db.ref(`rooms/${_roomCode}/guest/online`).set(true).catch(err => {
+                if (_callbacks.onError) _callbacks.onError('Ошибка сети: ' + err.message);
+            });
+            roomRef.onDisconnect().update({ 'guest/online': false });
+
             if (_callbacks.onOpponentReady) _callbacks.onOpponentReady();
         }).catch((error) => {
             if (_callbacks.onError) _callbacks.onError('Ошибка подключения: ' + error.message);
@@ -136,6 +167,12 @@ window.Multiplayer = (function () {
     function sendColors(hostColor) {
         if (!_roomCode) return;
         db.ref(`rooms/${_roomCode}/colors`).set(hostColor);
+    }
+
+    /** Signal that the local player clicked 'Готов к расстановке' */
+    function sendLobbyReady() {
+        if (!_roomCode || !_role) return;
+        db.ref(`rooms/${_roomCode}/${_role}/lobby_ready`).set(true);
     }
 
     function sendMove(moveData) {
@@ -162,5 +199,5 @@ window.Multiplayer = (function () {
     function getRoomCode() { return _roomCode; }
     function getRole() { return _role; }
 
-    return { createRoom, joinRoom, sendSetup, sendColors, sendMove, sendEquip, cleanup, getRoomCode, getRole };
+    return { createRoom, joinRoom, sendSetup, sendColors, sendLobbyReady, sendMove, sendEquip, cleanup, getRoomCode, getRole };
 })();

@@ -486,6 +486,16 @@
                 <p id="room-waiting-text" style="color:var(--text-muted); font-size:0.85em;">⏳ Ожидание подключения друга...</p>
             </div>
 
+            <!-- Coin flip result + ready-up panel (shown after animation) -->
+            <div id="friend-coin-result" style="display:none; text-align:center; padding:10px 0;">
+                <div id="coin-result-icon" style="font-size:3rem; margin-bottom:8px;"></div>
+                <p id="coin-result-text" style="font-size:1.3em; font-weight:bold; margin-bottom:4px;"></p>
+                <p id="coin-ready-count" style="color:var(--text-muted); font-size:0.85em; margin-bottom:16px;">0/2 игроков готовы</p>
+                <button id="btn-lobby-ready" class="btn btn-primary" style="width:100%; font-size:1.1em;">
+                    🎯 Готов к расстановке!
+                </button>
+            </div>
+
             <button id="btn-friend-lobby-back" class="btn btn-outline" style="width:100%; margin-top:20px;">← Назад</button>
         </div>
     </div>
