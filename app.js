@@ -1439,21 +1439,32 @@
                 btn.innerHTML = '<span class="btn-icon">⏳</span> <span>Ожидание оппонента...</span>';
                 friendSetupReady = true;
                 if (window.Multiplayer) {
-                    const piecesData = [];
                     const myColor = isBlackSetup ? 'black' : 'white';
+                    const rawPieces = [];
                     for (let r = 0; r < 8; r++) {
                         for (let c = 0; c < 8; c++) {
                             const p = engine.getPiece(r, c);
                             if (p && p.color === myColor) {
-                                piecesData.push({ ...p, r, c });
+                                // Strip functions by serializing only plain data fields
+                                rawPieces.push({
+                                    r, c,
+                                    type: p.type,
+                                    baseType: p.baseType,
+                                    color: p.color,
+                                    id: p.id,
+                                    shield: p.shield || 0,
+                                    moveCount: p.moveCount || 0,
+                                    captureCount: p.captureCount || 0,
+                                    frozen: p.frozen || 0,
+                                    alive: p.alive !== false,
+                                    // Store only item IDs and slot positions (no functions)
+                                    items: (p.items || []).map(item => item ? { id: item.id } : null)
+                                });
                             }
                         }
                     }
-                    window.Multiplayer.sendSetup({
-                        pieces: piecesData,
-                        items: runManager.playerItems
-                    });
-                    // Fallback to trigger opponent check
+                    // Safe to send — no functions, pure JSON-serializable data
+                    window.Multiplayer.sendSetup({ pieces: rawPieces });
                     window.Multiplayer.sendMove({ type: 'setup_ready' });
                 }
                 _checkBothReady();
@@ -1826,11 +1837,22 @@
                     if (p && p.color === oppColor) engine.removePiece(r, c);
                 }
             }
-            // Add custom pieces
+            // Add custom pieces — restore item functions from ITEMS_DB
             if (friendOpponentSetupData.pieces) {
                 friendOpponentSetupData.pieces.forEach(pData => {
-                    const newP = new PieceEntity(pData.type, pData.color);
-                    Object.assign(newP, pData);
+                    const newP = new PieceEntity(pData.type, pData.color, pData.id);
+                    newP.baseType = pData.baseType || pData.type;
+                    newP.shield = pData.shield || 0;
+                    newP.moveCount = pData.moveCount || 0;
+                    newP.captureCount = pData.captureCount || 0;
+                    newP.frozen = pData.frozen || 0;
+                    newP.alive = pData.alive !== false;
+                    // Restore full item objects from ITEMS_DB (which have the functions)
+                    newP.items = (pData.items || [null, null, null]).map(itemRef => {
+                        if (!itemRef || !itemRef.id) return null;
+                        const catalogItem = typeof ITEMS_DB !== 'undefined' && ITEMS_DB[itemRef.id];
+                        return catalogItem ? { ...catalogItem } : null;
+                    });
                     engine.setPiece(pData.r, pData.c, newP);
                 });
             }
