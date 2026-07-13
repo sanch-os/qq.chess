@@ -18,10 +18,11 @@
     let isCreativeMode = false;
     let isPvP = false;
     let isMirrorMode = false;
+    let isFriendMode = false; // "Play with friend" mode
     let isBlackSetup = false; // true when black player is placing pieces in PvP
     let isRaidMode = false;   // Raid (extraction) mode
     let isRaidSetupMode = false; // Raid setup phase before choosing faction
-    let isRaidTestMode = false;  // Test-Drive: infinite resources in raid setup
+    let isTestDriveMode = false;  // Test-Drive: infinite resources in setup
     let isRaidScav = false;   // true = playing as Scav (black)
     let raidLootSelected = [];
 
@@ -158,8 +159,8 @@
             // Toggle vertical layout for Raid mode
             const setupLayout = document.querySelector('.setup-layout');
             const startBtn = document.getElementById('btn-start-game');
-            const testToggleWrap = document.getElementById('raid-test-toggle-wrap');
-            const testToggleCheck = document.getElementById('raid-test-mode-toggle');
+            const testToggleWrap = document.getElementById('test-toggle-wrap');
+            const testToggleCheck = document.getElementById('test-mode-toggle');
             const stashFloatingPanel = document.querySelector('.stash-floating-panel');
 
             if (setupLayout) {
@@ -178,13 +179,13 @@
                     boardWithLabels.appendChild(stashFloatingPanel);
                 }
 
-                // Test-Drive toggle: raid setup only.
-                if (typeof isRaidSetupMode !== 'undefined' && isRaidSetupMode) {
+                // Test-Drive toggle: raid setup OR friend mode.
+                if (typeof isRaidSetupMode !== 'undefined' && (isRaidSetupMode || isFriendMode)) {
                     if (testToggleWrap) testToggleWrap.style.display = '';
                 } else {
                     if (testToggleWrap) testToggleWrap.style.display = 'none';
                     if (testToggleCheck) testToggleCheck.checked = false;
-                    isRaidTestMode = false;
+                    isTestDriveMode = false;
                 }
 
                 // The floating stash is only meaningful for modes that use items
@@ -201,10 +202,10 @@
                 }
 
                 // "Edit Black" button: only visible in Creative mode (PvP or PvE).
-                // Explicitly hide it for all other modes so state doesn't leak.
+                // "Edit Black" button: visible in Creative mode OR Friend mode.
                 const btnSetupBlack = document.getElementById('btn-setup-black');
                 if (btnSetupBlack) {
-                    btnSetupBlack.style.display = isCreativeMode ? '' : 'none';
+                    btnSetupBlack.style.display = (isCreativeMode || isFriendMode) ? '' : 'none';
                 }
 
                 // Keep the stash header + off-board placement in sync with the
@@ -412,7 +413,7 @@
     function renderInventory() {
         inventoryEl.innerHTML = '';
         // Test-Drive overrides: behave like creative (infinite)
-        const isInfinite = isCreativeMode || isRaidTestMode;
+        const isInfinite = isCreativeMode || isTestDriveMode;
         inventory.forEach((item, index) => {
             const el = document.createElement('div');
             el.className = `inventory-item ${(!isInfinite && item.remaining <= 0) ? 'used' : ''}`;
@@ -432,7 +433,7 @@
                 const type = node.dataset.type;
                 const idx = parseInt(node.dataset.index);
                 const invItem = inventory[idx];
-                const inf = isCreativeMode || (typeof isRaidTestMode !== 'undefined' && isRaidTestMode);
+                const inf = isCreativeMode || (typeof isTestDriveMode !== 'undefined' && isTestDriveMode);
                 if (!invItem || (!inf && invItem.remaining <= 0)) return null;
                 return {
                     payload: { kind: 'piece', piece: { source: 'inventory', type, index: idx } },
@@ -448,7 +449,7 @@
         playerStashSetupEl.innerHTML = '';
 
         // Test-Drive works exactly like creative for items
-        const infiniteItems = isCreativeMode || isRaidTestMode;
+        const infiniteItems = isCreativeMode || isTestDriveMode;
 
         if (infiniteItems) {
             // In creative / test mode — show ALL items from catalog, infinite supply
@@ -720,7 +721,7 @@
         const c = parseInt(cell.dataset.col);
         const piece = engine.getPiece(r, c);
 
-        const isInfinite = isCreativeMode || (typeof isRaidTestMode !== 'undefined' && isRaidTestMode);
+        const isInfinite = isCreativeMode || (typeof isTestDriveMode !== 'undefined' && isTestDriveMode);
 
         if (draggedItem !== null) {
             // Equip item to piece
@@ -1165,6 +1166,87 @@
             showScreen('setup');
             // Ensure any leftover overlay classes are cleared
             clearSetupOverlay();
+        });
+
+        document.getElementById('btn-friend-mode')?.addEventListener('click', () => {
+            isFriendMode = true;
+            isPvP = true;
+            document.getElementById('modal-friend-lobby').style.display = 'flex';
+            document.getElementById('friend-lobby-status').textContent = '';
+            document.getElementById('friend-lobby-main').style.display = '';
+            document.getElementById('friend-room-created').style.display = 'none';
+            document.getElementById('join-room-code-input').value = '';
+        });
+
+        // Create Room
+        document.getElementById('btn-create-room')?.addEventListener('click', () => {
+            const statusEl = document.getElementById('friend-lobby-status');
+            const mainEl = document.getElementById('friend-lobby-main');
+            const createdEl = document.getElementById('friend-room-created');
+            const codeEl = document.getElementById('room-code-display');
+
+            const code = window.Multiplayer.createRoom({
+                onOpponentReady: () => {
+                    document.getElementById('room-waiting-text').textContent = '\u2705 \u0414\u0440\u0443\u0433 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u043b\u0441\u044f! \u041d\u0430\u0447\u0438\u043d\u0430\u0435\u043c \u0440\u0430\u0441\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0443...';
+                    setTimeout(() => {
+                        document.getElementById('modal-friend-lobby').style.display = 'none';
+                        isRoguelikeMode = false; isCreativeMode = false; isPvP = true;
+                        isMirrorMode = false; isFriendMode = true; isBlackSetup = false;
+                        isRaidMode = false; isRaidSetupMode = false; isTestDriveMode = false;
+                        engine.reset(); resetInventory(false); runManager.playerItems = [];
+                        showScreen('setup');
+                    }, 1200);
+                },
+                onOpponentMove: (data) => {
+                    if (data.type === 'equip') { /* handle equip sync */ return; }
+                    const move = data.move;
+                    if (move) { engine.executeMoveAndUpdate(move); renderBoard(boardGame); checkGameOver && checkGameOver(); }
+                }
+            });
+
+            mainEl.style.display = 'none';
+            createdEl.style.display = '';
+            codeEl.textContent = code;
+            statusEl.textContent = '';
+        });
+
+        // Join Room
+        document.getElementById('btn-join-room-submit')?.addEventListener('click', () => {
+            const code = document.getElementById('join-room-code-input').value.trim();
+            if (code.length < 5) {
+                document.getElementById('friend-lobby-status').textContent = '\u26a0\ufe0f \u0412\u0432\u0435\u0434\u0438 5-\u0437\u043d\u0430\u0447\u043d\u044b\u0439 \u043a\u043e\u0434!';
+                return;
+            }
+            document.getElementById('friend-lobby-status').textContent = '\u23f3 \u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0430\u0435\u043c\u0441\u044f...';
+
+            window.Multiplayer.joinRoom(code, {
+                onOpponentReady: () => {
+                    document.getElementById('friend-lobby-status').textContent = '\u2705 \u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u043e!';
+                    setTimeout(() => {
+                        document.getElementById('modal-friend-lobby').style.display = 'none';
+                        isRoguelikeMode = false; isCreativeMode = false; isPvP = true;
+                        isMirrorMode = false; isFriendMode = true; isBlackSetup = false;
+                        isRaidMode = false; isRaidSetupMode = false; isTestDriveMode = false;
+                        engine.reset(); resetInventory(false); runManager.playerItems = [];
+                        showScreen('setup');
+                    }, 800);
+                },
+                onOpponentMove: (data) => {
+                    if (data.type === 'equip') { /* handle equip sync */ return; }
+                    const move = data.move;
+                    if (move) { engine.executeMoveAndUpdate(move); renderBoard(boardGame); checkGameOver && checkGameOver(); }
+                },
+                onError: (msg) => {
+                    document.getElementById('friend-lobby-status').textContent = '\u274c ' + msg;
+                }
+            });
+        });
+
+        // Close lobby modal
+        document.getElementById('btn-friend-lobby-back')?.addEventListener('click', () => {
+            if (window.Multiplayer) window.Multiplayer.cleanup();
+            document.getElementById('modal-friend-lobby').style.display = 'none';
+            isFriendMode = false; isPvP = false;
         });
 
         document.getElementById('btn-mirror-match').addEventListener('click', () => {
@@ -1794,7 +1876,7 @@
         const hasEmptySlot = piece.getEmptySlot() !== -1;
 
         // In creative or test-drive mode — show full catalog; else show player stash
-        const isCatalogMode = isCreativeMode || isRaidTestMode;
+        const isCatalogMode = isCreativeMode || isTestDriveMode;
         const sourceItems = isCatalogMode
             ? Object.values(ITEMS_DB).map((item) => ({ item, idx: item.id }))
             : runManager.playerItems.map((item, idx) => ({ item, idx }));
@@ -2002,6 +2084,11 @@
         if (!result) return;
 
         lastMove = { from: result.move.from, to: result.move.to };
+
+        // Sync move to opponent in friend mode
+        if (isFriendMode && window.Multiplayer) {
+            window.Multiplayer.sendMove({ type: 'move', move: result.move });
+        }
 
         if (result.captured) {
             capturedPieces.white.push(result.captured);
@@ -2326,6 +2413,8 @@
             modalGameover.classList.remove('active');
             if (isCreativeMode) {
                 document.getElementById('btn-creative').click();
+            } else if (isFriendMode) {
+                document.getElementById('btn-friend-mode').click();
             } else if (isMirrorMode) {
                 document.getElementById('btn-mirror-match').click();
             } else if (isPvP) {
@@ -2700,14 +2789,14 @@
         });
 
         // --- Task 1: Test-Drive toggle ---
-        document.getElementById('raid-test-mode-toggle')?.addEventListener('change', (e) => {
-            isRaidTestMode = e.target.checked;
+        document.getElementById('test-mode-toggle')?.addEventListener('change', (e) => {
+            isTestDriveMode = e.target.checked;
             // Re-render so stash and inventory reflect infinite mode
             renderInventory();
             renderStashSetup();
             // Visual feedback on the wrapper
-            const wrap = document.getElementById('raid-test-toggle-wrap');
-            if (wrap) wrap.classList.toggle('raid-test-mode-active', isRaidTestMode);
+            const wrap = document.getElementById('test-toggle-wrap');
+            if (wrap) wrap.classList.toggle('test-mode-active', isTestDriveMode);
         });
 
 

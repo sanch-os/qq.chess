@@ -979,7 +979,8 @@ body {
     display: flex;
 }
 
-.modal {
+.modal,
+.modal-box {
     padding: 40px;
     text-align: center;
     max-width: 400px;
@@ -1263,12 +1264,12 @@ body {
 }
 
 /* Wide scrollbar thumb — easy to grab on mobile */
-.stash-grid::-webkit-scrollbar { width: 14px; }
+.stash-grid::-webkit-scrollbar { width: 16px; }
 .stash-grid::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); border-radius: 8px; }
 .stash-grid::-webkit-scrollbar-thumb {
     background: rgba(255,255,255,0.35);
     border-radius: 8px;
-    border: 3px solid transparent; /* Creates visual padding inside the wider scrollbar */
+    border: 1px solid transparent; /* Creates visual padding inside the wider scrollbar */
     background-clip: padding-box;
 }
 .stash-grid::-webkit-scrollbar-thumb:hover {
