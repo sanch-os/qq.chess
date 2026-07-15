@@ -320,6 +320,16 @@ function renderEffectsRef(filterText, filterPiece, filterCat) {
     // Update counter
     const countEl = document.getElementById('effects-ref-count');
     if (countEl) countEl.textContent = `${filtered.length} из ${sourceItems.length}`;
+}
+// FIX [CRITICAL]: the closing brace above was missing entirely. Every
+// function defined after this point in the file (loadDataFromStorage,
+// saveDataToStorage, switchTab, saveCurrentItem, exportData, importData,
+// etc.) was lexically swallowed into renderEffectsRef()'s body, so the
+// parser ran off the end of the file looking for a closing brace that
+// never came — a fatal SyntaxError ("Unexpected end of input") that
+// prevented this entire script from parsing, let alone running. Confirmed
+// via `node --check editor.js` and a full brace-balance count (exactly one
+// unclosed '{' in the whole file, resolving to this exact spot).
 
 // --- Storage ---
 
@@ -565,8 +575,15 @@ function saveCurrentItem() {
             const valStr = row.querySelector('.mod-val').value.trim();
             if (key) {
                 let val = valStr;
-                if (valStr === 'true') val = true;
-                else if (valStr === 'false') val = false;
+                // FIX: case-insensitive boolean parsing. The aggregation in
+                // PieceEntity.getStats() only recognizes a modifier value as
+                // boolean via `typeof value === 'boolean'` — a string like
+                // "True" or "FALSE" matched neither the boolean branch nor
+                // the numeric branch there, so it was silently dropped from
+                // the aggregated stats entirely, with no error anywhere.
+                const lower = valStr.toLowerCase();
+                if (lower === 'true') val = true;
+                else if (lower === 'false') val = false;
                 else if (!isNaN(valStr) && valStr !== '') val = Number(valStr);
                 item.modifiers[key] = val;
             }
@@ -581,7 +598,17 @@ function saveCurrentItem() {
         });
 
         const idx = itemsData.findIndex(i => i.id === currentEditingId);
-        if (idx >= 0 && currentEditingId === id) {
+        if (idx >= 0) {
+            // FIX: editing an existing item — including a RENAME (id
+            // changed from currentEditingId). The old code only updated
+            // in place when the id stayed the same; a rename fell through
+            // to the "new item" branch below, which pushed a second entry
+            // under the new id while the original stayed in the array
+            // under the old one — a rename silently became a duplicate.
+            // Guard only against colliding with a DIFFERENT existing item.
+            if (id !== currentEditingId && itemsData.some(i => i.id === id)) {
+                return alert('Предмет с таким ID уже существует!');
+            }
             itemsData[idx] = item;
         } else {
             if (itemsData.some(i => i.id === id)) {
@@ -612,16 +639,37 @@ function saveCurrentItem() {
             map.bossDescription = document.getElementById('map-boss-desc').value;
         }
 
+        let droppedStaleRefs = 0;
         document.querySelectorAll('.enemy-item-row').forEach(row => {
+            const itemId = row.querySelector('.ei-item').value;
+            // FIX: a <select> row's options are populated from itemsData at
+            // the moment the row was added (see addEnemyItemField); if the
+            // referenced item was deleted afterward while this map stayed
+            // open, saving would silently persist a dangling itemId — the
+            // exact same "enemy silently gets no gear" bug class found and
+            // fixed in encounters.js, just user-generated here instead of
+            // hardcoded. Validate against the CURRENT itemsData before saving.
+            if (!itemsData.some(i => i.id === itemId)) {
+                droppedStaleRefs++;
+                return;
+            }
             map.enemyItems.push({
                 pieceType: row.querySelector('.ei-type').value,
                 pieceIndex: parseInt(row.querySelector('.ei-index').value) || 0,
-                itemId: row.querySelector('.ei-item').value
+                itemId
             });
         });
+        if (droppedStaleRefs > 0) {
+            alert(`⚠️ ${droppedStaleRefs} ссылок на удалённые предметы были пропущены при сохранении.`);
+        }
 
         const idx = mapsData.findIndex(m => m.id === currentEditingId);
-        if (idx >= 0 && currentEditingId === id) {
+        if (idx >= 0) {
+            // FIX: same rename-creates-duplicate bug as saveCurrentItem's
+            // item branch above — see that comment for the full explanation.
+            if (id !== currentEditingId && mapsData.some(m => m.id === id)) {
+                return alert('Раунд с таким ID уже существует!');
+            }
             mapsData[idx] = map;
         } else {
             if (mapsData.some(m => m.id === id)) {

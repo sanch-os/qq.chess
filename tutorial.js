@@ -22,7 +22,7 @@
         { key: 'tut.inventory',     targetId: 'inventory',             position: 'right', screen: 'setup' },
         { key: 'tut.stash',        targetId: 'player-stash-setup',    position: 'right', screen: 'setup' },
         { key: 'tut.board_place',   targetId: 'board-setup',          position: 'left',  screen: 'setup' },
-        { key: 'tut.start_btn',     targetId: 'btn-start',             position: 'top',   screen: 'setup' },
+        { key: 'tut.start_btn',     targetId: 'btn-start-game',        position: 'top',   screen: 'setup' },
 
         // Game screen steps
         { key: 'tut.game_intro',    targetId: null,                    position: 'center', screen: 'game' },

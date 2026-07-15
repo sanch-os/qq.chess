@@ -60,6 +60,26 @@
                 el.innerHTML = translation;
             }
         });
+        // FIX: data-i18n only ever set innerHTML, which can't reach a
+        // `title` attribute (tooltip text) — found while auditing
+        // index.html: the settings gear icon and the piece-inventory
+        // close button both had a permanently-hardcoded `title`
+        // regardless of language. data-i18n-title covers that case.
+        document.querySelectorAll('[data-i18n-title]').forEach(el => {
+            const key = el.getAttribute('data-i18n-title');
+            const translation = window.t(key);
+            if (translation) {
+                el.title = translation;
+            }
+        });
+        // Same gap for `placeholder` (the friend-mode room-code input).
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+            const key = el.getAttribute('data-i18n-placeholder');
+            const translation = window.t(key);
+            if (translation) {
+                el.placeholder = translation;
+            }
+        });
     }
 
     function changeLanguage(lang) {
@@ -780,16 +800,22 @@
 
             if (draggedPiece.source === 'inventory') {
                 const invItem = inventory[draggedPiece.index];
-                if (!invItem || (!isInfinite && invItem.remaining <= 0)) {
-                    // Not enough pieces, but wait: if we swapped, maybe we just freed it up!
-                    if (!isInfinite && invItem.remaining <= 0) return;
-                }
-                engine.board[r][c] = new PieceEntity(draggedPiece.type, setupColor);
+                // FIX: single, unambiguous guard. The old nested re-check
+                // could read `.remaining` off an undefined invItem if ever
+                // reached with (!invItem && !isInfinite) — not reachable
+                // given how `inventory` is currently populated, but
+                // simplified so it can't become a latent crash later.
+                if (!invItem) return;
+                if (!isInfinite && invItem.remaining <= 0) return;
+                // FIX: use the engine's public placement API instead of
+                // writing engine.board[r][c] directly, so the king-position
+                // cache stays correct even when placing a king during setup.
+                engine.placePiece(r, c, draggedPiece.type, setupColor);
                 if (!isInfinite) invItem.remaining--;
             } else if (draggedPiece.source === 'board') {
-                const p = engine.board[draggedPiece.row][draggedPiece.col];
-                engine.board[draggedPiece.row][draggedPiece.col] = null;
-                engine.board[r][c] = p;
+                const p = engine.getPiece(draggedPiece.row, draggedPiece.col);
+                engine.removePiece(draggedPiece.row, draggedPiece.col);
+                engine.setPiece(r, c, p);
             }
 
             renderBoard(boardSetup);
@@ -1003,7 +1029,24 @@
         if (currentShopItems.length === 0 || currentShopItems.every(i => i === null)) {
             currentShopItems = getShopItems(9, runManager.gold);
         }
+        renderShopScreen();
+        showScreen('shop');
+    }
 
+    // FIX: openShop() and refreshShop() used to each implement their OWN
+    // copy of the item grid + buy/sell click handlers. They silently
+    // diverged: openShop()'s buy handler correctly called
+    // runManager.buyItem() (which checks both affordability AND the 99-item
+    // STASH_LIMIT), but refreshShop()'s buy handler had its own inline
+    // duplicate (`runManager.gold -= item.cost; runManager.playerItems.push(...)`)
+    // that never checked STASH_LIMIT at all. Since buying an item calls
+    // refreshShop() to redraw — and refreshShop() attaches its OWN handlers
+    // when it redraws — every purchase AFTER THE FIRST in a single shop
+    // visit went through the unguarded duplicate, silently bypassing the
+    // stash cap for the rest of that visit. Consolidating into one shared
+    // renderShopScreen() means there is only one purchase code path left,
+    // so it can't drift out of sync with itself again.
+    function renderShopScreen() {
         document.getElementById('shop-gold-display').textContent = runManager.gold;
 
         const itemsGrid = document.getElementById('shop-items');
@@ -1029,6 +1072,8 @@
                     setTimeout(() => el.style.animation = '', 300);
                     return;
                 }
+                // FIX: always go through runManager.buyItem() — the ONLY
+                // place that checks both affordability AND STASH_LIMIT.
                 const result = runManager.buyItem(item);
                 if (result === 'full') {
                     el.style.border = '2px solid #ff5555';
@@ -1065,67 +1110,11 @@
             });
             stashGrid.appendChild(el);
         });
-
-        showScreen('shop');
     }
 
-    // Refresh shop UI without re-rolling items
+    // Refresh shop UI without re-rolling items (called after any buy/sell).
     function refreshShop() {
-        document.getElementById('shop-gold-display').textContent = runManager.gold;
-
-        const itemsGrid = document.getElementById('shop-items');
-        itemsGrid.innerHTML = '';
-        currentShopItems.forEach((item, index) => {
-            if (!item) return;
-            const el = document.createElement('div');
-            el.className = `shop-item rarity-${item.rarity || 'common'}`;
-            el.dataset.shopIndex = index;
-            const tName = window.t_item(item, 'name');
-            const tDesc = window.t_item(item, 'description');
-            const _wr = ItemStats.format(item.id);
-            const _wrBadge = _wr !== '\u2014' ? `<span class="item-winrate">${_wr}</span>` : '';
-            el.innerHTML = `
-                <div class="item-icon">${item.icon || '📦'}</div>
-                <div class="item-name">${tName}${_wrBadge}</div>
-                <div class="item-cost">${item.cost} 🪙</div>
-                <div class="item-tooltip">${tDesc}</div>
-            `;
-            el.addEventListener('click', () => {
-                if (runManager.gold < item.cost) {
-                    el.style.animation = 'shake 0.3s';
-                    setTimeout(() => el.style.animation = '', 300);
-                    return;
-                }
-                runManager.gold -= item.cost;
-                runManager.playerItems.push({ ...item });
-                currentShopItems[index] = null;
-                refreshShop();
-            });
-            itemsGrid.appendChild(el);
-        });
-
-        const stashGrid = document.getElementById('shop-stash');
-        stashGrid.innerHTML = '';
-        runManager.playerItems.forEach((item, index) => {
-            if (!item) return;
-            const el = document.createElement('div');
-            el.className = `stash-item rarity-${item.rarity || 'common'}`;
-            const sellPrice = Math.floor(item.cost / 2);
-            const tName = window.t_item(item, 'name');
-            const tDesc = window.t_item(item, 'description');
-            el.innerHTML = `
-                <div class="item-icon">${item.icon || '📦'}</div>
-                <div class="item-tooltip">${window.t('shop.msg.sell_for').replace('{price}', sellPrice)}<br>${tDesc}</div>
-            `;
-            el.addEventListener('click', () => {
-                const msg = window.t('shop.msg.sell_confirm').replace('{name}', tName).replace('{price}', sellPrice);
-                if (confirm(msg)) {
-                    runManager.sellItem(index);
-                    refreshShop();
-                }
-            });
-            stashGrid.appendChild(el);
-        });
+        renderShopScreen();
     }
 
     // --- Populate Menu Background ---
@@ -1231,8 +1220,39 @@
                         _checkBothReady();
                         return;
                     }
+
                     const move = data.move;
-                    if (move) { engine.executeMoveAndUpdate(move); renderBoard(boardGame); checkGameOver && checkGameOver(); }
+                    if (!move || !move.from || !move.to) return; // malformed payload — ignore
+
+                    // FIX [CRITICAL]: previously called engine.executeMoveAndUpdate(move)
+                    // directly on whatever the network sent, with NO legality check —
+                    // executeMoveAndUpdate() performs none itself (that's makeMove()'s
+                    // job). A malformed, stale, or desynced payload would silently
+                    // corrupt the board. Routing through engine.makeMove() applies the
+                    // exact same legality gate a local click gets (including "does this
+                    // leave your own king in check"), and safely no-ops on anything
+                    // illegal instead of executing it.
+                    const moverColor = engine.currentTurn; // capture BEFORE the engine advances the turn
+                    const result = engine.makeMove(move.from.row, move.from.col, move.to.row, move.to.col, move.promotion);
+                    if (!result) return; // illegal / desynced move — ignore rather than corrupt the board
+
+                    lastMove = { from: result.move.from, to: result.move.to };
+                    if (result.captured) {
+                        capturedPieces[moverColor].push(result.captured);
+                    }
+
+                    renderBoard(boardGame);
+                    updateMoveHistory();
+                    updateGameStatus();
+                    updateCapturedPieces();
+                    animateLastMove(boardGame);
+
+                    // FIX [CRITICAL]: `checkGameOver` was never defined anywhere in
+                    // the codebase — this line threw ReferenceError on literally every
+                    // networked move, crashing the receiving client and skipping
+                    // handleGameOver() (so a networked checkmate never showed the
+                    // game-over modal on this side).
+                    if (engine.gameOver) handleGameOver();
                 }
             });
 
@@ -1277,8 +1297,39 @@
                         _checkBothReady();
                         return;
                     }
+
                     const move = data.move;
-                    if (move) { engine.executeMoveAndUpdate(move); renderBoard(boardGame); checkGameOver && checkGameOver(); }
+                    if (!move || !move.from || !move.to) return; // malformed payload — ignore
+
+                    // FIX [CRITICAL]: previously called engine.executeMoveAndUpdate(move)
+                    // directly on whatever the network sent, with NO legality check —
+                    // executeMoveAndUpdate() performs none itself (that's makeMove()'s
+                    // job). A malformed, stale, or desynced payload would silently
+                    // corrupt the board. Routing through engine.makeMove() applies the
+                    // exact same legality gate a local click gets (including "does this
+                    // leave your own king in check"), and safely no-ops on anything
+                    // illegal instead of executing it.
+                    const moverColor = engine.currentTurn; // capture BEFORE the engine advances the turn
+                    const result = engine.makeMove(move.from.row, move.from.col, move.to.row, move.to.col, move.promotion);
+                    if (!result) return; // illegal / desynced move — ignore rather than corrupt the board
+
+                    lastMove = { from: result.move.from, to: result.move.to };
+                    if (result.captured) {
+                        capturedPieces[moverColor].push(result.captured);
+                    }
+
+                    renderBoard(boardGame);
+                    updateMoveHistory();
+                    updateGameStatus();
+                    updateCapturedPieces();
+                    animateLastMove(boardGame);
+
+                    // FIX [CRITICAL]: `checkGameOver` was never defined anywhere in
+                    // the codebase — this line threw ReferenceError on literally every
+                    // networked move, crashing the receiving client and skipping
+                    // handleGameOver() (so a networked checkmate never showed the
+                    // game-over modal on this side).
+                    if (engine.gameOver) handleGameOver();
                 },
                 onError: (msg) => {
                     document.getElementById('friend-lobby-status').textContent = '❌ ' + msg;
@@ -1306,8 +1357,8 @@
         // Fix 4: 'Готов к расстановке' button — write lobby_ready to Firebase
         document.getElementById('btn-lobby-ready')?.addEventListener('click', () => {
             const btn = document.getElementById('btn-lobby-ready');
-            if (btn) { btn.disabled = true; btn.textContent = '⏳ Ждём второго игрока...'; }
-            document.getElementById('coin-ready-count').textContent = '1/2 игроков готовы...';
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ ' + window.t('friend.waiting_second_player'); }
+            document.getElementById('coin-ready-count').textContent = window.t('friend.ready_count').replace('{count}', '1');
             window.Multiplayer.sendLobbyReady();
         });
 
@@ -1784,12 +1835,12 @@
         if (mainEl2) mainEl2.style.display = 'none';
         if (createdEl2) createdEl2.style.display = 'none';
         if (resultIcon) resultIcon.textContent = assignedColor === 'white' ? '⬜' : '⬛';
-        if (resultText) resultText.textContent = 'Вы играете за ' + (assignedColor === 'white' ? 'Белых' : 'Чёрных') + '!';
-        if (readyCount) readyCount.textContent = '0/2 игроков готовы';
+        if (resultText) resultText.textContent = window.t(assignedColor === 'white' ? 'friend.you_play_as_white' : 'friend.you_play_as_black');
+        if (readyCount) readyCount.textContent = window.t('friend.ready_count').replace('{count}', '0');
         if (coinResultDiv) coinResultDiv.style.display = '';
         // Reset the ready button state
         const readyBtn = document.getElementById('btn-lobby-ready');
-        if (readyBtn) { readyBtn.disabled = false; readyBtn.textContent = '🎯 Готов к расстановке!'; }
+        if (readyBtn) { readyBtn.disabled = false; readyBtn.textContent = '🎯 ' + window.t('friend.ready_btn'); }
         // Ensure the modal stays visible
         const overlay = document.getElementById('modal-friend-lobby');
         if (overlay) overlay.style.display = 'flex';
@@ -2199,8 +2250,12 @@
         const item = runManager.playerItems[stashIndex];
         if (!item) return;
 
-        // Equip
-        piece.setItem(slot, item);
+        // FIX: equip a defensive clone, never the live stash-array
+        // reference — matches the pattern equipItemFromCatalog (above)
+        // already uses. Nothing currently mutates an item's fields in
+        // place, so this wasn't causing a live bug, but it's a fragile
+        // assumption the next item-related feature could easily break.
+        piece.setItem(slot, { ...item, modifiers: { ...(item.modifiers || {}) } });
         runManager.playerItems.splice(stashIndex, 1);
 
         // Re-render
@@ -2333,6 +2388,13 @@
     }
 
     function executePlayerMove(fromR, fromC, toR, toC, promotionType) {
+        // FIX: capture the mover's color BEFORE makeMove() advances
+        // engine.currentTurn. The old code hardcoded capturedPieces.white,
+        // which is correct in PvE (this function only ever runs for white's
+        // clicks there) but mislabeled captures in PvP/Friend Mode whenever
+        // black moved locally (see onGameCellClick: "In PvP both colors can
+        // click").
+        const moverColor = engine.currentTurn;
         const result = engine.makeMove(fromR, fromC, toR, toC, promotionType);
         if (!result) return;
 
@@ -2344,7 +2406,7 @@
         }
 
         if (result.captured) {
-            capturedPieces.white.push(result.captured);
+            capturedPieces[moverColor].push(result.captured);
 
             // Loot enemy items in roguelike mode
             if (isRoguelikeMode && result.captured.color === 'black' && result.captured instanceof PieceEntity) {
@@ -2654,8 +2716,17 @@
             text.textContent = window.t('gameover.text.lose');
         } else {
             icon.textContent = '🤝'; title.textContent = window.t('gameover.title.draw');
+            // FIX: gameResultReason can now also be 'threefold repetition'
+            // (added to chess-engine.js in an earlier pass of this audit —
+            // it could not occur before, so this UI never needed to handle
+            // it). It used to fall through to the 'material' text, silently
+            // mislabeling a threefold-repetition draw as insufficient
+            // material. Requires the gameover.text.repetition key added to
+            // locales.js in the same audit pass.
             text.textContent = engine.gameResultReason === 'stalemate' ? window.t('gameover.text.stalemate') :
-                engine.gameResultReason === '50-move rule' ? window.t('gameover.text.50move') : window.t('gameover.text.material');
+                engine.gameResultReason === '50-move rule' ? window.t('gameover.text.50move') :
+                engine.gameResultReason === 'threefold repetition' ? window.t('gameover.text.repetition') :
+                window.t('gameover.text.material');
         }
 
         btnPlayAgain.textContent = window.t('gameover.btn.restart');

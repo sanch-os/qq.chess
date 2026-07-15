@@ -1,7 +1,19 @@
-/* ============================================
-   Encounters — Round definitions
-   Full progression: 15 rounds, boss every 5
-   ============================================ */
+/* ============================================================================
+   Encounters — qq.chess round definitions (audited)
+   ============================================================================
+   Full progression: 15 rounds, boss every 5.
+
+   AUDIT FINDING: cross-referencing every `itemId` below against the real
+   items-db.js catalog (85 entries) turned up FOUR references to item ids
+   that do not exist anywhere in the catalog. getItemById() returns null for
+   an unknown id, and RunManager._equipEnemyItems() silently `continue`s
+   past a null item — so these enemies simply never received their
+   intended gear, with no error anywhere. Three of the four are recovered
+   with high confidence because they match an exact convention repeated in
+   several OTHER rounds (see each fix comment); the fourth (dodge_ring) has
+   no equally strong signal and is a best-effort substitution — flagged as
+   such rather than presented as a certain recovery.
+   ========================================================================= */
 
 const ENCOUNTERS = [
     // ─── РАУНД 1-4: Новобранцы ───────────────────────────────────────────────
@@ -93,7 +105,12 @@ const ENCOUNTERS = [
             { pieceType: 'queen',  pieceIndex: 0, itemId: 'boots_of_speed' },
             { pieceType: 'pawn',   pieceIndex: 0, itemId: 'boots_of_speed' },
             { pieceType: 'pawn',   pieceIndex: 3, itemId: 'wooden_shield' },
-            { pieceType: 'bishop', pieceIndex: 0, itemId: 'pierce_one' },
+            // FIX: was 'pierce_one' — no such item id anywhere in the
+            // catalog. 'tunnel_drill' is the ONLY item with the pierceOne
+            // modifier, and its description ("ignores one piece in its
+            // path") is exactly the "phasing" mechanic these rounds are
+            // themed around.
+            { pieceType: 'bishop', pieceIndex: 0, itemId: 'tunnel_drill' },
         ],
         isBoss: false,
     },
@@ -109,7 +126,15 @@ const ENCOUNTERS = [
             { pieceType: 'rook',   pieceIndex: 0, itemId: 'titanium_plate' },
             { pieceType: 'rook',   pieceIndex: 1, itemId: 'titanium_plate' },
             { pieceType: 'queen',  pieceIndex: 0, itemId: 'divine_shield' },
-            { pieceType: 'knight', pieceIndex: 0, itemId: 'dodge_ring' },
+            // FIX: was 'dodge_ring' — no such item id anywhere in the
+            // catalog. Best-effort substitution (NOT a certain recovery —
+            // no in-file convention pins this down the way the other three
+            // fixes in this file are pinned): phantom_cloak has the
+            // highest dodge chance (35%) and universal allowedPieces,
+            // matching this round's "nearly unkillable" theme. stone_skin
+            // (30%, pawn/rook) or silk_robe (15%, queen/bishop) are also
+            // plausible if the original intent was different.
+            { pieceType: 'knight', pieceIndex: 0, itemId: 'phantom_cloak' },
         ],
         isBoss: false,
     },
@@ -143,7 +168,8 @@ const ENCOUNTERS = [
             { pieceType: 'rook',   pieceIndex: 1, itemId: 'wooden_shield' },
             { pieceType: 'knight', pieceIndex: 0, itemId: 'magic_boots' },
             { pieceType: 'knight', pieceIndex: 1, itemId: 'horseshoe' },
-            { pieceType: 'bishop', pieceIndex: 0, itemId: 'pierce_one' },
+            // FIX: was 'pierce_one' — see round_6's fix comment above.
+            { pieceType: 'bishop', pieceIndex: 0, itemId: 'tunnel_drill' },
         ],
         isBoss: false,
     },
@@ -185,7 +211,8 @@ const ENCOUNTERS = [
         enemySetup: 'standard',
         enemyItems: [
             { pieceType: 'queen',  pieceIndex: 0, itemId: 'star_map' },
-            { pieceType: 'bishop', pieceIndex: 0, itemId: 'pierce_one' },
+            // FIX: was 'pierce_one' — see round_6's fix comment above.
+            { pieceType: 'bishop', pieceIndex: 0, itemId: 'tunnel_drill' },
             { pieceType: 'bishop', pieceIndex: 1, itemId: 'compass' },
             { pieceType: 'knight', pieceIndex: 0, itemId: 'silk_robe' },
             { pieceType: 'rook',   pieceIndex: 0, itemId: 'titanium_plate' },
@@ -221,7 +248,8 @@ const ENCOUNTERS = [
         enemyItems: [
             { pieceType: 'queen',  pieceIndex: 0, itemId: 'omega_rune' },
             { pieceType: 'bishop', pieceIndex: 0, itemId: 'shadow_step' },
-            { pieceType: 'bishop', pieceIndex: 1, itemId: 'pierce_one' },
+            // FIX: was 'pierce_one' — see round_6's fix comment above.
+            { pieceType: 'bishop', pieceIndex: 1, itemId: 'tunnel_drill' },
             { pieceType: 'knight', pieceIndex: 0, itemId: 'magic_boots' },
             { pieceType: 'knight', pieceIndex: 1, itemId: 'horseshoe' },
             { pieceType: 'rook',   pieceIndex: 0, itemId: 'battle_axe' },
@@ -241,7 +269,8 @@ const ENCOUNTERS = [
             { pieceType: 'queen',  pieceIndex: 0, itemId: 'omega_rune' },
             { pieceType: 'rook',   pieceIndex: 0, itemId: 'titanium_plate' },
             { pieceType: 'rook',   pieceIndex: 1, itemId: 'battle_axe' },
-            { pieceType: 'bishop', pieceIndex: 0, itemId: 'pierce_one' },
+            // FIX: was 'pierce_one' — see round_6's fix comment above.
+            { pieceType: 'bishop', pieceIndex: 0, itemId: 'tunnel_drill' },
             { pieceType: 'knight', pieceIndex: 0, itemId: 'horseshoe' },
             { pieceType: 'knight', pieceIndex: 1, itemId: 'magic_boots' },
             { pieceType: 'king',   pieceIndex: 0, itemId: 'kings_crown' },
@@ -264,13 +293,22 @@ const ENCOUNTERS = [
             // Тёмная ферзь с абсолютной мощью
             { pieceType: 'queen',  pieceIndex: 0, itemId: 'omega_rune' },
             // Бессмертные ладьи
-            { pieceType: 'rook',   pieceIndex: 0, itemId: 'iron_plate' },
-            { pieceType: 'rook',   pieceIndex: 1, itemId: 'iron_plate' },
+            // FIX: was 'iron_plate' — no such item id anywhere in the
+            // catalog. Every OTHER round in this file (7, 9, 10, 11, 12,
+            // 13, 14) uses 'titanium_plate' as the rook-armor item — this
+            // was the one round breaking that established convention.
+            { pieceType: 'rook',   pieceIndex: 0, itemId: 'titanium_plate' },
+            { pieceType: 'rook',   pieceIndex: 1, itemId: 'titanium_plate' },
             // Неуязвимые рыцари
             { pieceType: 'knight', pieceIndex: 0, itemId: 'horseshoe' },
-            { pieceType: 'knight', pieceIndex: 1, itemId: 'leap_boots' },
+            // FIX: was 'leap_boots' — no such item id anywhere in the
+            // catalog. Every OTHER two-knight round (9, 10, 13, 14) pairs
+            // horseshoe with magic_boots — this was the one round breaking
+            // that established convention.
+            { pieceType: 'knight', pieceIndex: 1, itemId: 'magic_boots' },
             // Слоны-призраки
-            { pieceType: 'bishop', pieceIndex: 0, itemId: 'pierce_one' },
+            // FIX: was 'pierce_one' — see round_6's fix comment above.
+            { pieceType: 'bishop', pieceIndex: 0, itemId: 'tunnel_drill' },
             { pieceType: 'bishop', pieceIndex: 1, itemId: 'compass' },
         ],
         isBoss: true,
@@ -279,18 +317,55 @@ const ENCOUNTERS = [
     },
 ];
 
-// Try to load custom encounters from localStorage
+/**
+ * Minimal shape check for an encounter loaded from untrusted storage (the
+ * level editor writes to the same localStorage key this reads from).
+ *
+ * FIX: previously ANY array from localStorage was trusted verbatim. A
+ * malformed custom encounter (e.g. goldReward not a number) would silently
+ * propagate `NaN` through RunManager's gold economy for the rest of the
+ * run, or make aiDepth/enemyItems-dependent code misbehave downstream —
+ * with no error pointing back to the actual cause.
+ * @param {*} e
+ * @returns {boolean}
+ */
+function _isValidEncounter(e) {
+    return !!e && typeof e === 'object'
+        && typeof e.id === 'string'
+        && typeof e.goldReward === 'number' && Number.isFinite(e.goldReward)
+        && typeof e.aiDepth === 'number' && Number.isFinite(e.aiDepth)
+        && Array.isArray(e.enemyItems || []);
+}
+
+/**
+ * Returns the encounter sequence for a run: a custom sequence from
+ * localStorage (written by the level editor) if one validates cleanly,
+ * otherwise the built-in campaign.
+ * @returns {Array<Object>}
+ */
 function getEncounters() {
     try {
         const custom = localStorage.getItem('chess_roguelike_encounters');
         if (custom) {
             const parsed = JSON.parse(custom);
-            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                const valid = parsed.filter(_isValidEncounter);
+                if (valid.length > 0) return valid;
+                // Every entry failed validation — fall through to the
+                // built-in campaign rather than handing back an empty or
+                // malformed sequence.
+            }
         }
-    } catch (e) {}
+    } catch (e) {
+        // Malformed JSON, storage unavailable, etc. — fall through.
+    }
     return ENCOUNTERS;
 }
 
+/**
+ * @param {string} id
+ * @returns {Object|undefined}
+ */
 function getEncounterById(id) {
     return getEncounters().find(e => e.id === id);
 }
