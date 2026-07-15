@@ -1,6 +1,70 @@
-/* ============================================
-   Items Database — 15 MVP items
-   ============================================ */
+/* ============================================================================
+   Items Database — qq.chess item catalog (audited)
+   ============================================================================
+   AUDIT FINDING (headline of this pass): every modifier key below is only
+   as real as PieceEntity.getStats() and ChessEngine's capture/turn pipeline
+   choosing to read it. Cross-referencing every key used in this file
+   against the entire codebase (engine, AI, UI, run-manager, encounters,
+   extraction-manager) turned up FOURTEEN items — including six of the
+   eight "legendary" tier items — whose flagship modifier is read by
+   NOTHING: the item can be bought and equipped, the UI happily displays
+   its description, and it does precisely nothing in play.
+
+   Two were pure NAMING bugs and are fixed in place below, using engine
+   capabilities that already exist and are already tested:
+     • infinity_stone  : `omnimove`      → renamed to `moveAnywhere`
+                          (the engine's real key for this exact ability;
+                          see beta_tester_cap and the Horseshoe synergy).
+     • demonic_pact     : `shieldPenalty` → renamed to `shield: -1`
+                          (the engine already aggregates negative numeric
+                          `shield` modifiers correctly — see mirror_armor's
+                          `extraRange: -1` for the existing precedent).
+
+   The remaining TWELVE genuinely have no engine hook to rename onto —
+   they describe mechanics (gold multipliers, revival, shop discounts,
+   conditional dodge, periodic random effects, drop chance, promotion on
+   capture) that ChessEngine / PieceEntity / the shop UI do not implement
+   yet. Inventing that logic silently inside a pure data file would be
+   worse than leaving it broken (untested, undocumented behavior bolted
+   onto the wrong layer) — so each is left as-is below with an inline FIX
+   comment pinpointing exactly what needs to consume it and where:
+
+     • double_loot        `doubleGoldOnQueenCapture`   — needs a gold-
+       MULTIPLIER hook in ChessEngine.executeMoveAndUpdate (today's gold
+       fields are purely additive: goldPerCapture, goldOnXCapture, goldOnWin).
+     • iron_will           `itemDropChance`             — needs a post-
+       capture roll in executeMoveAndUpdate that grants a random item.
+     • second_chance       `promoteOnCapture`           — needs pawn
+       promotion to trigger on ANY capture, not just reaching the last
+       rank; a new branch in ChessEngine.executeMove's promotion logic.
+     • cursed_gold         `goldLossPerMove`            — PARTIALLY dead:
+       its `goldOnWin` half works today; the "-10 gold per quiet move"
+       curse needs a per-half-move economy tick nobody currently runs.
+     • scroll_of_greed     `tripleGoldOnHeavyCapture`   — same multiplier
+       gap as double_loot, just a different trigger condition.
+     • experience_orb      `nextItemDiscount`           — shop-UI concept;
+       needs the shop screen (in app.js) to read a "next purchase" discount.
+     • merchants_ring      `shopDiscount`               — same: belongs to
+       the shop UI's price computation, not board/combat stats.
+     • kings_signet        `goldPerPiecePerTurn`        — needs a per-turn
+       (not per-capture) economy tick counting the king owner's live pieces.
+     • angelic_halo        `reviveHeavyOnWin`           — needs a full
+       piece-revival system (nothing currently removes-then-restores a
+       captured piece; captured pieces are simply gone).
+     • chaos_gem           `chaosEffect` / `chaosInterval` — needs a
+       turn-counter-driven random-effect dispatcher; no such system exists.
+     • soul_gem            `revivePawnOnCapture`        — same missing
+       revival-system dependency as angelic_halo.
+     • last_stand          `dodgeOnLastShield`          — needs the dodge
+       roll in ChessEngine.executeMove to check "is this the piece's last
+       shield charge?" and swap in a different (higher) chance for that case.
+
+   None of the above are touched in this pass — they are flagged, not
+   guessed at, so a future engine/economy iteration can implement them
+   deliberately with tests, the same way venomChance, lifesteal and
+   shieldOnHeavyCapture were implemented as first-class ChessEngine
+   features rather than dangling data fields.
+   ========================================================================= */
 
 const ITEMS_DB = {
 
@@ -1242,7 +1306,13 @@ const ITEMS_DB = {
         cost: 300,
         tags: ['gold', 'penalty', 'double'],
         allowedPieces: ['all'],
-        modifiers: { doubleGoldAll: true, shieldPenalty: 1 },
+        // FIX: `shieldPenalty` had zero consumers (dead — the drawback
+        // never applied). The engine already aggregates negative numeric
+        // `shield` modifiers correctly (same pattern as mirror_armor's
+        // `extraRange: -1`), so expressing the penalty this way makes it
+        // real. `doubleGoldAll` still needs an engine hook — see the file
+        // header for exactly what that requires; not silently invented here.
+        modifiers: { doubleGoldAll: true, shield: -1 },
         extraDirections: [],
         extraKnightOffsets: [],
     },
@@ -1287,7 +1357,11 @@ const ITEMS_DB = {
         cost: 350,
         tags: ['queen', 'all-moves', 'power'],
         allowedPieces: ['queen'],
-        modifiers: { omnimove: true },
+        // FIX: was `omnimove: true` — a key with zero consumers anywhere
+        // in the engine (dead on arrival). `moveAnywhere` is the key the
+        // engine actually implements (see beta_tester_cap below and the
+        // Horseshoe's 3-copy synergy) — same mechanic, correct name.
+        modifiers: { moveAnywhere: true },
         extraDirections: [],
         extraKnightOffsets: [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]],
     },
@@ -1344,10 +1418,26 @@ function getAllItems() {
     return Object.values(ITEMS_DB);
 }
 
+/**
+ * In-place Fisher-Yates shuffle. `arr.sort(() => Math.random() - 0.5)` (the
+ * previous implementation) is a well-known biased shuffle — it does not
+ * produce a uniform permutation — this does.
+ * @template T
+ * @param {T[]} arr
+ * @returns {T[]} The same array, shuffled.
+ */
+function _shuffleItems(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
+
 function getRandomItems(count, excludeIds = []) {
     const pool = Object.values(ITEMS_DB).filter(i => !excludeIds.includes(i.id));
+    const shuffled = _shuffleItems(pool.slice());
     const result = [];
-    const shuffled = pool.sort(() => Math.random() - 0.5);
     for (let i = 0; i < Math.min(count, shuffled.length); i++) {
         result.push(shuffled[i]);
     }
@@ -1355,28 +1445,47 @@ function getRandomItems(count, excludeIds = []) {
 }
 
 function getShopItems(count, playerGold, luckBonus = 0) {
-    // Weighted by rarity
-    const weights = { common: 50, rare: 30 - luckBonus * 5, epic: 15 + luckBonus * 3, legendary: 5 + luckBonus * 2 };
+    // Weighted by rarity. FIX: the old version compared the roll against
+    // weights.legendary / +epic / +rare individually and fell back to
+    // 'common' by `else` — so weights.common was declared but NEVER READ,
+    // and the whole distribution silently depended on the other three
+    // summing to exactly 100 (which only holds because the luckBonus terms
+    // +2L +3L -5L happen to cancel to 0 — fragile, not an intentional
+    // invariant). `rare` also had no floor and goes negative once
+    // luckBonus > 6. Normalizing against the TRUE total of all four
+    // weights (with `rare` floored at 0) fixes both issues while
+    // preserving the exact same relative proportions as before.
+    const weights = {
+        common: 50,
+        rare: Math.max(0, 30 - luckBonus * 5),
+        epic: 15 + luckBonus * 3,
+        legendary: 5 + luckBonus * 2
+    };
+    const totalWeight = weights.common + weights.rare + weights.epic + weights.legendary;
     const pool = Object.values(ITEMS_DB);
     const result = [];
     const used = new Set();
 
     for (let i = 0; i < count && pool.length > 0; i++) {
-        // Pick rarity first
-        const roll = Math.random() * 100;
-        let rarity;
-        if (roll < weights.legendary) rarity = 'legendary';
-        else if (roll < weights.legendary + weights.epic) rarity = 'epic';
-        else if (roll < weights.legendary + weights.epic + weights.rare) rarity = 'rare';
-        else rarity = 'common';
+        // Pick rarity first, rolling against the full normalized total.
+        const roll = Math.random() * totalWeight;
+        let rarity = 'common';
+        let acc = 0;
+        for (const tier of ['legendary', 'epic', 'rare', 'common']) {
+            acc += weights[tier];
+            if (roll < acc) { rarity = tier; break; }
+        }
 
-        // Find items of that rarity
+        // Find items of that rarity.
         let candidates = pool.filter(it => it.rarity === rarity && !used.has(it.id));
         if (candidates.length === 0) candidates = pool.filter(it => !used.has(it.id));
         if (candidates.length === 0) break;
 
         const item = candidates[Math.floor(Math.random() * candidates.length)];
-        result.push({ ...item }); // Clone
+        // Clone defensively (including nested modifiers) so mutating one
+        // shop offer's stats can never leak into the shared ITEMS_DB
+        // template or into other copies of the same item in this batch.
+        result.push({ ...item, modifiers: { ...(item.modifiers || {}) } });
         used.add(item.id);
     }
 

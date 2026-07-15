@@ -1,7 +1,14 @@
-/* ================================================
-   multiplayer.js — Firebase Realtime Multiplayer
+/* ============================================================================
+   multiplayer.js — Firebase Realtime Multiplayer (refactored)
    for qq.chess "Play with Friend" mode
-   ================================================ */
+   ============================================================================
+   Trust model: every move that arrives here is handed to app.js's
+   onOpponentMove handler, which (as of the app.js audit pass) routes it
+   through ChessEngine.makeMove() — the same legality gate a local click
+   gets — rather than executing it blindly. That fix lives in app.js; this
+   file's job is just to move bytes reliably and not clobber someone else's
+   room while doing it.
+   ========================================================================= */
 
 // PLACEHOLDER config — user must replace with their Firebase project credentials
 const FIREBASE_CONFIG = {
@@ -20,10 +27,21 @@ if (!firebase.apps || !firebase.apps.length) {
 }
 const db = firebase.database();
 
+/** Alphabet avoids visually-ambiguous characters (no I/O/0/1). */
+const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const ROOM_CODE_LENGTH = 5;
+/** Matches exactly what generateRoomCode() can produce — used to validate
+ *  user-typed/pasted codes before they're used as a Firebase path segment. */
+const ROOM_CODE_PATTERN = new RegExp(`^[${ROOM_CODE_ALPHABET}]{${ROOM_CODE_LENGTH}}$`);
+/** Bounds the collision-retry loop in createRoom() so a pathological run
+ *  of bad luck can't spin forever. */
+const MAX_ROOM_CODE_ATTEMPTS = 5;
+
 function generateRoomCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
-    for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
+        code += ROOM_CODE_ALPHABET[Math.floor(Math.random() * ROOM_CODE_ALPHABET.length)];
+    }
     return code;
 }
 
@@ -38,33 +56,25 @@ window.Multiplayer = (function () {
         _listeners.push({ ref, event, cb });
     }
 
-    function createRoom(callbacks) {
-        _callbacks = callbacks || {};
-        _role = 'host';
-        _roomCode = generateRoomCode();
-        const roomRef = db.ref(`rooms/${_roomCode}`);
-
-        // Auto-cleanup on disconnect
-        roomRef.onDisconnect().remove();
-
-        // Write fresh room state — clears any stale data from previous sessions
-        roomRef.set({ status: 'waiting', host: { online: true }, guest: { online: false } });
-
-        // Listen for guest joining
+    /**
+     * Attaches every room listener (guest-ready, colors, moves, setup,
+     * lobby-ready) for the host role. Split out of createRoom() so it can
+     * be (re)run against whichever code the collision-retry loop ends up
+     * actually claiming.
+     */
+    function _attachHostListeners() {
         _on(db.ref(`rooms/${_roomCode}/guest/online`), 'value', (snap) => {
             if (snap.val() === true && _callbacks.onOpponentReady) {
                 _callbacks.onOpponentReady();
             }
         });
 
-        // Listen for colors assignment (host writes, but listener is here for symmetry)
         _on(db.ref(`rooms/${_roomCode}/colors`), 'value', (snap) => {
             if (snap.val() && _callbacks.onColorsAssigned) {
                 _callbacks.onColorsAssigned(snap.val());
             }
         });
 
-        // Listen for opponent moves
         _on(db.ref(`rooms/${_roomCode}/moves`), 'child_added', (snap) => {
             const data = snap.val();
             if (data && data.from !== _role && _callbacks.onOpponentMove) {
@@ -72,14 +82,12 @@ window.Multiplayer = (function () {
             }
         });
 
-        // Listen for guest setup
         _on(db.ref(`rooms/${_roomCode}/guest/setup`), 'value', (snap) => {
             if (snap.val() && _callbacks.onSetupSubmitted) {
                 _callbacks.onSetupSubmitted('guest', snap.val());
             }
         });
 
-        // Listen for lobby ready state (both players must click 'Готов к расстановке')
         function _checkLobbyReady() {
             db.ref(`rooms/${_roomCode}/host/lobby_ready`).once('value').then(hostSnap => {
                 db.ref(`rooms/${_roomCode}/guest/lobby_ready`).once('value').then(guestSnap => {
@@ -91,14 +99,105 @@ window.Multiplayer = (function () {
         }
         _on(db.ref(`rooms/${_roomCode}/host/lobby_ready`), 'value', () => _checkLobbyReady());
         _on(db.ref(`rooms/${_roomCode}/guest/lobby_ready`), 'value', () => _checkLobbyReady());
+    }
+
+    /**
+     * Creates a fresh room, claiming a code via an atomic transaction so a
+     * (rare) collision with an existing room can NEVER silently overwrite
+     * it — the transaction only succeeds if the path is currently empty.
+     *
+     * FIX: the previous version used `roomRef.set(...)`, an unconditional
+     * write. With ~33.5M possible codes a collision is unlikely on any
+     * single call, but not impossible, and an unconditional `set()` would
+     * have clobbered another pair's active game (status, online flags,
+     * and move history) with zero warning. On a genuine collision this
+     * version regenerates a new code and retries (bounded — see
+     * MAX_ROOM_CODE_ATTEMPTS) instead of touching the occupied room at all.
+     *
+     * The synchronous return-value contract is preserved for the existing
+     * caller in app.js (it displays the code immediately) — this resolves
+     * on the FIRST generated code optimistically. In the vanishingly rare
+     * case a retry is needed, pass `onRoomCodeChanged` in `callbacks` to be
+     * notified of the corrected code; existing callers that don't provide
+     * it keep working exactly as before (correctness is still guaranteed
+     * server-side — only the already-displayed code string could lag
+     * behind on that one-in-many-million retry path).
+     * @param {Object} callbacks
+     * @returns {string} The room code (may be superseded — see above).
+     */
+    function createRoom(callbacks) {
+        _callbacks = callbacks || {};
+        _role = 'host';
+        _roomCode = generateRoomCode();
+
+        _claimRoomCode(_roomCode, 1);
 
         return _roomCode;
     }
 
+    /**
+     * Attempts to atomically claim `code` for a new room. On collision,
+     * regenerates and retries (up to MAX_ROOM_CODE_ATTEMPTS); on final
+     * failure, reports via onError rather than ever falling back to an
+     * unconditional overwrite.
+     * @param {string} code
+     * @param {number} attempt
+     */
+    function _claimRoomCode(code, attempt) {
+        const roomRef = db.ref(`rooms/${code}`);
+        roomRef.transaction((current) => {
+            if (current !== null) return undefined; // abort — path occupied
+            return { status: 'waiting', host: { online: true }, guest: { online: false } };
+        }).then((result) => {
+            if (!result.committed) {
+                // Collision: someone else already owns this code.
+                if (attempt >= MAX_ROOM_CODE_ATTEMPTS) {
+                    if (_callbacks.onError) {
+                        _callbacks.onError('Не удалось создать комнату, попробуйте ещё раз');
+                    }
+                    return;
+                }
+                const nextCode = generateRoomCode();
+                _roomCode = nextCode;
+                if (_callbacks.onRoomCodeChanged) _callbacks.onRoomCodeChanged(nextCode);
+                _claimRoomCode(nextCode, attempt + 1);
+                return;
+            }
+
+            // Claimed successfully — this is now really our room.
+            _roomCode = code;
+            roomRef.onDisconnect().remove();
+            _attachHostListeners();
+        }).catch((err) => {
+            if (_callbacks.onError) _callbacks.onError('Ошибка сети: ' + err.message);
+        });
+    }
+
+    /**
+     * Joins an existing room by code.
+     *
+     * FIX: the user-supplied code is now validated against the exact
+     * alphabet/length generateRoomCode() can produce BEFORE it's used to
+     * build a Firebase path. Firebase RTDB keys forbid `. # $ [ ] /` and
+     * control characters — an unvalidated paste (stray slash, wrong
+     * length, pasted whitespace-containing text, etc.) could throw
+     * SYNCHRONOUSLY out of `db.ref()`, before the promise chain below even
+     * starts, bypassing the .catch() error handling entirely. Rejecting
+     * malformed input up front turns that into the same graceful
+       onError('Комната не найдена') path as any other bad code.
+     * @param {string} code
+     * @param {Object} callbacks
+     */
     function joinRoom(code, callbacks) {
         _callbacks = callbacks || {};
         _role = 'guest';
-        _roomCode = code.toUpperCase().trim();
+
+        const normalized = (code || '').toUpperCase().trim();
+        if (!ROOM_CODE_PATTERN.test(normalized)) {
+            if (_callbacks.onError) _callbacks.onError('Комната не найдена');
+            return;
+        }
+        _roomCode = normalized;
         const roomRef = db.ref(`rooms/${_roomCode}`);
 
         roomRef.once('value').then((snap) => {

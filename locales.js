@@ -1,3 +1,21 @@
+/* ============================================================================
+   locales.js — qq.chess translations (audited)
+   ============================================================================
+   AUDIT FINDING: cross-referencing every window.t('...') call in app.js/
+   editor.js and every data-i18n="..." attribute in the HTML against what's
+   actually defined here found FOUR keys used in the app but missing from
+   ALL THREE languages (menu.friend, piece.inv.empty, game.player.black,
+   game.player.opponent) — window.t() has nowhere to fall back to for these,
+   so it returns the raw key string, which appears verbatim in the UI. Two
+   of them (menu.friend, piece.inv.empty) have their intended Russian text
+   sitting right in the HTML as the pre-i18n fallback content — used as the
+   ru value here rather than guessed. All 109 pre-existing keys were
+   already perfectly symmetric across ru/en/es (no gaps) before this pass.
+   Also added gameover.text.repetition, needed by the chess-engine.js
+   threefold-repetition detection added in an earlier pass of this audit —
+   the UI had no text for it and would have fallen back to "insufficient
+   material", mislabeling the actual draw reason.
+   ========================================================================= */
 window.i18n = {
     ru: {
         // Menu
@@ -9,6 +27,10 @@ window.i18n = {
         'menu.creative': 'Творческий',
         'menu.editor': 'Редактор',
         'menu.difficulty': 'Сложность ИИ',
+        // FIX: was missing in all 3 languages — window.t() had no fallback
+        // and returned the raw key "menu.friend" for this main-menu button.
+        // Value taken from index.html's own pre-i18n fallback text.
+        'menu.friend': 'Игра с другом',
 
         'diff.very_easy': '🐣 Очень легко',
         'diff.easy': '🟢 Легко',
@@ -62,10 +84,15 @@ window.i18n = {
         'game.status.draw': 'Ничья!',
         'game.status.thinking': 'ИИ думает...',
         'game.history': 'История ходов',
+        // FIX: was missing in all 3 languages (app.js:1953 — opponent name
+        // label, shown for PvP vs non-PvP respectively).
+        'game.player.black': 'Чёрные',
+        'game.player.opponent': 'Противник',
 
         // Shop Screen
         'shop.title': 'Торговец',
         'shop.subtitle': 'Усильте свою армию перед следующим боем!',
+        'shop.items_title': 'Товары',
         'shop.stash': 'Ваш сундук (нажмите для продажи)',
         'shop.btn.continue': 'Продолжить забег ➡',
         'shop.msg.full': 'Сундук заполнен (99/99)!',
@@ -81,6 +108,11 @@ window.i18n = {
         'gameover.text.stalemate': 'Пат!',
         'gameover.text.50move': 'Правило 50 ходов',
         'gameover.text.material': 'Недостаточно материала',
+        // FIX: added for the chess-engine.js threefold-repetition draw
+        // reason (introduced in an earlier pass of this audit) — without
+        // this, showGameOverModalDefault() fell back to "insufficient
+        // material", mislabeling the actual draw reason.
+        'gameover.text.repetition': 'Ничья повторением позиции',
         'gameover.btn.shop': '🛒 В магазин',
         'gameover.btn.menu': '🏠 В меню',
         'gameover.btn.restart': '🔄 Заново',
@@ -102,6 +134,10 @@ window.i18n = {
         'piece.inv.subtitle.slots': 'Слоты экипировки ({count}/3)',
         'piece.inv.slot': 'Слот',
         'piece.inv.empty_slot': 'Пусто',
+        // FIX: was missing in all 3 languages (index.html:357 — "stash is
+        // empty" message). Value taken from index.html's own pre-i18n
+        // fallback text.
+        'piece.inv.empty': 'Сундук пуст.',
         'piece.inv.click_equip': 'Кликните для экипировки',
         'piece.inv.not_allowed': 'Не подходит для',
         'piece.inv.no_slots': 'Нет слотов',
@@ -129,6 +165,52 @@ window.i18n = {
         'settings.tutorial': 'Обучение',
         'settings.start_tutorial': 'Запустить обучение',
         'settings.close': 'Закрыть',
+
+        // FIX: added while auditing index.html — a systematic scan (every
+        // Cyrillic string inside a tag with no data-i18n attribute) found
+        // 42 hits. Most of the Raid mode UI and the entire Friend Mode
+        // lobby modal were never touched by applyLocalization() OR by any
+        // window.t() call in app.js — they show this Russian text
+        // regardless of the selected language. See index.html and app.js
+        // for the corresponding fixes (app.js also gained
+        // data-i18n-title support for tooltip attributes, which
+        // data-i18n alone cannot reach since it only sets innerHTML).
+        'game.player.you': 'Игрок',
+        'menu.raid': 'Рейд',
+        'menu.raid_stash': 'Схрон',
+        'promotion.title': 'Превращение пешки',
+        'test.drive_label': 'Тест-Драйв',
+        'test.drive_hint': '(бесконечные ресурсы)',
+        'piece.inv.hover_title': 'Инвентарь фигуры',
+        'friend.create_room': 'Создать комнату',
+        'friend.or': 'или',
+        'friend.room_code_placeholder': 'Код комнаты',
+        'friend.join_room_btn': 'Войти',
+        'friend.your_code_text': 'Твой код комнаты — отправь другу:',
+        'friend.waiting_text': 'Ожидание подключения друга...',
+        'friend.ready_btn': 'Готов к расстановке!',
+        'friend.waiting_second_player': 'Ждём второго игрока...',
+        'friend.ready_count': '{count}/2 игроков готовы',
+        'friend.you_play_as_white': 'Вы играете за Белых!',
+        'friend.you_play_as_black': 'Вы играете за Чёрных!',
+        'raid.faction.title': 'Выбор Фракции',
+        'raid.faction.subtitle': 'Кем вы пойдёте в рейд?',
+        'raid.faction.pmc.name': 'ЧВК',
+        'raid.faction.pmc.desc': 'Элитный боец. Играете <strong>белыми</strong>. Снаряжение из вашего схрона.',
+        'raid.faction.pmc.tag': 'PMC &#8226; Белые',
+        'raid.faction.scav.name': 'Дикий',
+        'raid.faction.scav.desc': 'Мародёр. Играете <strong>чёрными</strong>. Случайный набор фигур. Лутаете врагов.',
+        'raid.faction.scav.tag': 'SCAV &#8226; Чёрные',
+        'raid.stash.title': 'Схрон',
+        'raid.stash.subtitle': 'Ваши трофеи из рейдов',
+        'raid.stash.pieces_title': 'Запасные фигуры',
+        'raid.stash.pieces_empty': 'Нет запасных фигур',
+        'raid.stash.items_title': 'Предметы',
+        'raid.stash.items_empty': 'Схрон пуст. Сыграйте рейд!',
+        'raid.loot.title': 'Рейд завершён!',
+        'raid.loot.subtitle': 'Выберите до 3 предметов для схрона',
+        'raid.loot.confirm_btn': 'Забрать в схрон',
+        'raid.loot.skip_btn': 'Выйти без лута',
     },
 
     en: {
@@ -141,6 +223,7 @@ window.i18n = {
         'menu.creative': 'Creative Mode',
         'menu.editor': 'Editor',
         'menu.difficulty': 'AI Difficulty',
+        'menu.friend': 'Play with a Friend',
 
         'diff.very_easy': '🐣 Very Easy',
         'diff.easy': '🟢 Easy',
@@ -191,9 +274,12 @@ window.i18n = {
         'game.status.draw': 'Draw!',
         'game.status.thinking': 'AI is thinking...',
         'game.history': 'Move History',
+        'game.player.black': 'Black',
+        'game.player.opponent': 'Opponent',
 
         'shop.title': 'Merchant',
         'shop.subtitle': 'Strengthen your army before the next battle!',
+        'shop.items_title': 'Items',
         'shop.stash': 'Your stash (click to sell)',
         'shop.btn.continue': 'Continue Run ➡',
         'shop.msg.full': 'Stash is full (99/99)!',
@@ -208,6 +294,7 @@ window.i18n = {
         'gameover.text.stalemate': 'Stalemate!',
         'gameover.text.50move': '50-move rule',
         'gameover.text.material': 'Insufficient material',
+        'gameover.text.repetition': 'Draw by repetition',
         'gameover.btn.shop': '🛒 To Shop',
         'gameover.btn.menu': '🏠 Main Menu',
         'gameover.btn.restart': '🔄 Restart',
@@ -228,6 +315,7 @@ window.i18n = {
         'piece.inv.subtitle.slots': 'Equipment Slots ({count}/3)',
         'piece.inv.slot': 'Slot',
         'piece.inv.empty_slot': 'Empty',
+        'piece.inv.empty': 'Stash is empty.',
         'piece.inv.click_equip': 'Click to equip',
         'piece.inv.not_allowed': 'Not allowed for',
         'piece.inv.no_slots': 'No slots available',
@@ -253,6 +341,43 @@ window.i18n = {
         'settings.tutorial': 'Tutorial',
         'settings.start_tutorial': 'Start Tutorial',
         'settings.close': 'Close',
+
+        'game.player.you': 'Player',
+        'menu.raid': 'Raid',
+        'menu.raid_stash': 'Stash',
+        'promotion.title': 'Pawn Promotion',
+        'test.drive_label': 'Test Drive',
+        'test.drive_hint': '(unlimited resources)',
+        'piece.inv.hover_title': 'Piece Inventory',
+        'friend.create_room': 'Create Room',
+        'friend.or': 'or',
+        'friend.room_code_placeholder': 'Room Code',
+        'friend.join_room_btn': 'Join',
+        'friend.your_code_text': 'Your room code — send it to your friend:',
+        'friend.waiting_text': 'Waiting for friend to join...',
+        'friend.ready_btn': 'Ready to Set Up!',
+        'friend.waiting_second_player': 'Waiting for the other player...',
+        'friend.ready_count': '{count}/2 players ready',
+        'friend.you_play_as_white': 'You are playing White!',
+        'friend.you_play_as_black': 'You are playing Black!',
+        'raid.faction.title': 'Choose Your Faction',
+        'raid.faction.subtitle': 'Who will you raid as?',
+        'raid.faction.pmc.name': 'PMC',
+        'raid.faction.pmc.desc': 'Elite operator. You play <strong>White</strong>. Gear comes from your stash.',
+        'raid.faction.pmc.tag': 'PMC &#8226; White',
+        'raid.faction.scav.name': 'Scav',
+        'raid.faction.scav.desc': 'Scavenger. You play <strong>Black</strong>. Random loadout. Loot your enemies.',
+        'raid.faction.scav.tag': 'SCAV &#8226; Black',
+        'raid.stash.title': 'Stash',
+        'raid.stash.subtitle': 'Your loot from past raids',
+        'raid.stash.pieces_title': 'Spare Pieces',
+        'raid.stash.pieces_empty': 'No spare pieces',
+        'raid.stash.items_title': 'Items',
+        'raid.stash.items_empty': 'Stash is empty. Play a raid!',
+        'raid.loot.title': 'Raid Complete!',
+        'raid.loot.subtitle': 'Choose up to 3 items for your stash',
+        'raid.loot.confirm_btn': 'Take to Stash',
+        'raid.loot.skip_btn': 'Leave Without Loot',
     },
 
     es: {
@@ -265,6 +390,7 @@ window.i18n = {
         'menu.creative': 'Modo Creativo',
         'menu.editor': 'Editor',
         'menu.difficulty': 'Dificultad de la IA',
+        'menu.friend': 'Jugar con un Amigo',
 
         'diff.very_easy': '🐣 Muy Fácil',
         'diff.easy': '🟢 Fácil',
@@ -315,9 +441,12 @@ window.i18n = {
         'game.status.draw': '¡Empate!',
         'game.status.thinking': 'La IA está pensando...',
         'game.history': 'Historial',
+        'game.player.black': 'Negras',
+        'game.player.opponent': 'Oponente',
 
         'shop.title': 'Mercader',
         'shop.subtitle': '¡Refuerza tu ejército antes de la próxima batalla!',
+        'shop.items_title': 'Objetos',
         'shop.stash': 'Tu alijo (clic para vender)',
         'shop.btn.continue': 'Continuar ➡',
         'shop.msg.full': '¡Alijo lleno (99/99)!',
@@ -332,6 +461,7 @@ window.i18n = {
         'gameover.text.stalemate': '¡Ahogado!',
         'gameover.text.50move': 'Regla de 50 mov.',
         'gameover.text.material': 'Material insuficiente',
+        'gameover.text.repetition': 'Tablas por repetición',
         'gameover.btn.shop': '🛒 A la Tienda',
         'gameover.btn.menu': '🏠 Menu Principal',
         'gameover.btn.restart': '🔄 Reiniciar',
@@ -352,6 +482,7 @@ window.i18n = {
         'piece.inv.subtitle.slots': 'Ranuras ({count}/3)',
         'piece.inv.slot': 'Ranura',
         'piece.inv.empty_slot': 'Vacío',
+        'piece.inv.empty': 'El alijo está vacío.',
         'piece.inv.click_equip': 'Clic para equipar',
         'piece.inv.not_allowed': 'No válido para',
         'piece.inv.no_slots': 'Sin ranuras',
@@ -377,6 +508,43 @@ window.i18n = {
         'settings.tutorial': 'Tutorial',
         'settings.start_tutorial': 'Iniciar Tutorial',
         'settings.close': 'Cerrar',
+
+        'game.player.you': 'Jugador',
+        'menu.raid': 'Asalto',
+        'menu.raid_stash': 'Alijo',
+        'promotion.title': 'Coronación de Peón',
+        'test.drive_label': 'Prueba de Manejo',
+        'test.drive_hint': '(recursos ilimitados)',
+        'piece.inv.hover_title': 'Inventario de la Pieza',
+        'friend.create_room': 'Crear Sala',
+        'friend.or': 'o',
+        'friend.room_code_placeholder': 'Código de Sala',
+        'friend.join_room_btn': 'Entrar',
+        'friend.your_code_text': 'Tu código de sala — envíaselo a tu amigo:',
+        'friend.waiting_text': 'Esperando a que tu amigo se una...',
+        'friend.ready_btn': '¡Listo para Configurar!',
+        'friend.waiting_second_player': 'Esperando al otro jugador...',
+        'friend.ready_count': '{count}/2 jugadores listos',
+        'friend.you_play_as_white': '¡Juegas con Blancas!',
+        'friend.you_play_as_black': '¡Juegas con Negras!',
+        'raid.faction.title': 'Elige tu Facción',
+        'raid.faction.subtitle': '¿Con quién harás el asalto?',
+        'raid.faction.pmc.name': 'PMC',
+        'raid.faction.pmc.desc': 'Operador de élite. Juegas con <strong>Blancas</strong>. El equipo viene de tu alijo.',
+        'raid.faction.pmc.tag': 'PMC &#8226; Blancas',
+        'raid.faction.scav.name': 'Scav',
+        'raid.faction.scav.desc': 'Carroñero. Juegas con <strong>Negras</strong>. Equipo aleatorio. Saquea a tus enemigos.',
+        'raid.faction.scav.tag': 'SCAV &#8226; Negras',
+        'raid.stash.title': 'Alijo',
+        'raid.stash.subtitle': 'Tu botín de asaltos anteriores',
+        'raid.stash.pieces_title': 'Piezas de Repuesto',
+        'raid.stash.pieces_empty': 'No hay piezas de repuesto',
+        'raid.stash.items_title': 'Objetos',
+        'raid.stash.items_empty': 'El alijo está vacío. ¡Juega un asalto!',
+        'raid.loot.title': '¡Asalto Completado!',
+        'raid.loot.subtitle': 'Elige hasta 3 objetos para tu alijo',
+        'raid.loot.confirm_btn': 'Llevar al Alijo',
+        'raid.loot.skip_btn': 'Salir sin Botín',
     }
 };
 
