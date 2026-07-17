@@ -154,6 +154,7 @@
         bindEvents();
         populateMenuBackground();
         showScreen('menu');
+        updateContinueRunButton();
 
         // Global safety nets: guarantee any in-flight pointer drag is torn down
         // (listeners + ghost + state) on every alternative termination path, so
@@ -1023,12 +1024,122 @@
         warning.classList.toggle('visible', !canStart);
     }
 
+    /* ======================================================================
+       Run persistence (roguelike save / continue)
+       ======================================================================
+       Checkpoints the run BETWEEN rounds only (after a win → shop, and on
+       leaving the shop → setup). Mid-battle state is intentionally not
+       saved: after every win collectItemsFromBoard() returns all equipment
+       to the stash, so RunManager.serialize() alone captures the whole run.
+       Quitting/refreshing mid-battle resumes at that round's setup — the
+       standard roguelike contract (the fight itself is never save-scummable).
+
+       `resume` ('shop'|'setup') records WHERE to drop the player on
+       restore — RunManager.state can't be trusted for this because the
+       leave-shop flow never calls finishShopping(). `shopItems` (catalog
+       IDs, null = bought slot) pins the current shop offers so a refresh
+       can't re-roll the shop. */
+    const RUN_SAVE_KEY = 'chess_run_save_v1';
+
+    function saveRunState(resume) {
+        if (!isRoguelikeMode || !runManager.isRunActive()) return;
+        try {
+            const payload = runManager.serialize();
+            payload.resume = (resume === 'shop') ? 'shop' : 'setup';
+            if (resume === 'shop') {
+                payload.shopItems = currentShopItems.map(i => (i ? i.id : null));
+            }
+            localStorage.setItem(RUN_SAVE_KEY, JSON.stringify(payload));
+        } catch (e) {
+            console.error('Failed to save run state:', e);
+        }
+        updateContinueRunButton();
+    }
+
+    function loadRunSave() {
+        try {
+            const raw = localStorage.getItem(RUN_SAVE_KEY);
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            console.error('Failed to read run save:', e);
+            return null;
+        }
+    }
+
+    function clearRunSave() {
+        try { localStorage.removeItem(RUN_SAVE_KEY); }
+        catch (e) { console.error('Failed to clear run save:', e); }
+        updateContinueRunButton();
+    }
+
+    /** Shows/hides the menu's "Continue run" button based on a valid save. */
+    function updateContinueRunButton() {
+        const btn = document.getElementById('btn-continue-run');
+        if (!btn) return;
+        const save = loadRunSave();
+        const valid = !!(save && save.active && save.v === RunManager.SAVE_VERSION);
+        btn.style.display = valid ? '' : 'none';
+        if (valid) {
+            const roundEl = btn.querySelector('.continue-run-round');
+            if (roundEl) {
+                roundEl.textContent = window.t('menu.continue.round')
+                    .replace('{round}', save.currentRound + 1);
+            }
+        }
+    }
+
+    /** Restores a saved run and routes the player to shop or setup. */
+    function continueSavedRun() {
+        const save = loadRunSave();
+        if (!save || !runManager.restore(save)) {
+            // Corrupt / stale-version save — drop it so the button hides.
+            clearRunSave();
+            return;
+        }
+
+        // Same cross-mode flag hygiene as btn-new-run.
+        isRoguelikeMode = true;
+        isCreativeMode = false;
+        isPvP = false;
+        isMirrorMode = false;
+        isBlackSetup = false;
+        isRaidMode = false;
+        isRaidSetupMode = false;
+
+        engine.reset();
+        resetInventory();
+        currentShopItems = [];
+
+        if (save.resume === 'shop') {
+            // Pin the saved shop offers (null = already-bought slot) so a
+            // page refresh can't re-roll the shop. Unknown IDs (balance
+            // patch between sessions) degrade to empty slots.
+            if (Array.isArray(save.shopItems)) {
+                currentShopItems = save.shopItems.map(id => {
+                    if (typeof id !== 'string') return null;
+                    const it = getItemById(id);
+                    return it ? { ...it, modifiers: { ...(it.modifiers || {}) } } : null;
+                });
+            }
+            openShop();
+        } else {
+            renderBoard(boardSetup);
+            renderStashSetup();
+            updateStartButton();
+            showScreen('setup');
+            clearSetupOverlay();
+        }
+    }
+
     // --- Shop ---
     function openShop() {
         // Generate fresh shop items — 9 slots (only once per shop visit, not on buy/sell refresh)
         if (currentShopItems.length === 0 || currentShopItems.every(i => i === null)) {
             currentShopItems = getShopItems(9, runManager.gold);
         }
+        // Pin the (possibly fresh) offers into the save so a refresh
+        // resumes THIS shop instead of re-rolling it.
+        saveRunState('shop');
         renderShopScreen();
         showScreen('shop');
     }
@@ -1082,6 +1193,7 @@
                     return;
                 }
                 currentShopItems[index] = null;
+                saveRunState('shop'); // checkpoint gold/stash/offer state
                 refreshShop(); // refresh display without re-rolling
             });
 
@@ -1105,6 +1217,7 @@
                 const msg = window.t('shop.msg.sell_confirm').replace('{name}', tName).replace('{price}', sellPrice);
                 if (confirm(msg)) {
                     runManager.sellItem(index);
+                    saveRunState('shop'); // checkpoint gold/stash state
                     refreshShop();
                 }
             });
@@ -1153,6 +1266,9 @@
             isRaidMode = false;
             isRaidSetupMode = false;
             runManager.startRun();
+            // Checkpoint immediately: locks in the 12 random starting items
+            // (a refresh before round 1 must not re-roll them).
+            saveRunState('setup');
             engine.reset();
             resetInventory();
             renderBoard(boardSetup);
@@ -1162,6 +1278,8 @@
             // Ensure any leftover overlay classes are cleared
             clearSetupOverlay();
         });
+
+        document.getElementById('btn-continue-run')?.addEventListener('click', continueSavedRun);
 
         document.getElementById('btn-friend-mode')?.addEventListener('click', () => {
             // Fix 1: Reset ALL friend-mode stale state before opening lobby
@@ -1233,7 +1351,15 @@
                     // leave your own king in check"), and safely no-ops on anything
                     // illegal instead of executing it.
                     const moverColor = engine.currentTurn; // capture BEFORE the engine advances the turn
-                    const result = engine.makeMove(move.from.row, move.from.col, move.to.row, move.to.col, move.promotion);
+                    // NETWORK SYNC: apply the sender's dodge/venom RNG results
+                    // (data.outcomes) instead of re-rolling locally — re-rolling
+                    // desynced the boards whenever a roll differed between clients.
+                    // Older clients that don't send outcomes fall back to a local
+                    // roll (pre-fix behavior) rather than crashing.
+                    const forcedOutcomes = (data.outcomes && typeof data.outcomes === 'object')
+                        ? { dodged: !!data.outcomes.dodged, venom: !!data.outcomes.venom }
+                        : undefined;
+                    const result = engine.makeMove(move.from.row, move.from.col, move.to.row, move.to.col, move.promotion, forcedOutcomes);
                     if (!result) return; // illegal / desynced move — ignore rather than corrupt the board
 
                     lastMove = { from: result.move.from, to: result.move.to };
@@ -1310,7 +1436,15 @@
                     // leave your own king in check"), and safely no-ops on anything
                     // illegal instead of executing it.
                     const moverColor = engine.currentTurn; // capture BEFORE the engine advances the turn
-                    const result = engine.makeMove(move.from.row, move.from.col, move.to.row, move.to.col, move.promotion);
+                    // NETWORK SYNC: apply the sender's dodge/venom RNG results
+                    // (data.outcomes) instead of re-rolling locally — re-rolling
+                    // desynced the boards whenever a roll differed between clients.
+                    // Older clients that don't send outcomes fall back to a local
+                    // roll (pre-fix behavior) rather than crashing.
+                    const forcedOutcomes = (data.outcomes && typeof data.outcomes === 'object')
+                        ? { dodged: !!data.outcomes.dodged, venom: !!data.outcomes.venom }
+                        : undefined;
+                    const result = engine.makeMove(move.from.row, move.from.col, move.to.row, move.to.col, move.promotion, forcedOutcomes);
                     if (!result) return; // illegal / desynced move — ignore rather than corrupt the board
 
                     lastMove = { from: result.move.from, to: result.move.to };
@@ -1526,6 +1660,7 @@
 
         document.getElementById('btn-back-menu').addEventListener('click', () => {
             showScreen('menu');
+        updateContinueRunButton();
         });
 
         document.getElementById('btn-leave-shop').addEventListener('click', () => {
@@ -1535,6 +1670,7 @@
             engine.reset();
             // Restore stash items after reset
             runManager.playerItems = savedItems;
+            saveRunState('setup'); // resume point moves: shop -> next-round setup
             resetInventory();
             renderBoard(boardSetup);
             renderStashSetup();
@@ -1621,12 +1757,14 @@
         document.getElementById('btn-new-game-2').addEventListener('click', () => {
             modalGameover.classList.remove('active');
             showScreen('menu');
+        updateContinueRunButton();
         });
 
         document.getElementById('btn-play-again').addEventListener('click', () => {
             modalGameover.classList.remove('active');
             if (isRoguelikeMode) {
                 showScreen('menu');
+        updateContinueRunButton();
             } else {
                 engine.reset();
                 resetInventory(isCreativeMode); // keep creative flag
@@ -1639,6 +1777,7 @@
         document.getElementById('btn-to-menu').addEventListener('click', () => {
             modalGameover.classList.remove('active');
             showScreen('menu');
+        updateContinueRunButton();
         });
 
         // --- Пресеты расстановок ---
@@ -2400,9 +2539,30 @@
 
         lastMove = { from: result.move.from, to: result.move.to };
 
-        // Sync move to opponent in friend mode
+        // Sync move to opponent in friend mode.
+        // FIX [CRITICAL, x2]:
+        // 1) The old code sent `result.move` verbatim. After execution the
+        //    engine attaches `_survivor` (a live PieceEntity) to the move —
+        //    a class instance with internal caches went straight into
+        //    Firebase, violating the "plain data only" transport rule and
+        //    risking a hard crash on any `undefined` field. Now we send a
+        //    minimal, explicitly-constructed DTO.
+        // 2) Dodge/venom are RANDOM. The receiver used to re-roll them
+        //    locally while replaying the move, so the first dodge that
+        //    fired on one client only desynced the boards permanently.
+        //    We now transmit this client's actual RNG results
+        //    (`result.outcomes`) and the receiver applies them as-is via
+        //    makeMove's forcedOutcomes parameter.
         if (isFriendMode && window.Multiplayer) {
-            window.Multiplayer.sendMove({ type: 'move', move: result.move });
+            window.Multiplayer.sendMove({
+                type: 'move',
+                move: {
+                    from: { row: result.move.from.row, col: result.move.from.col },
+                    to:   { row: result.move.to.row,   col: result.move.to.col },
+                    promotion: result.move.promotion || null
+                },
+                outcomes: result.outcomes
+            });
         }
 
         if (result.captured) {
@@ -2636,6 +2796,12 @@
             // Reset currentShopItems so next shop visit has fresh items
             currentShopItems = [];
 
+            // Checkpoint the run. On a full victory the run is over —
+            // drop the save instead. (The shop offers aren't rolled yet;
+            // openShop() re-saves with the pinned offers once they are.)
+            if (runManager.state === 'victory') clearRunSave();
+            else saveRunState('shop');
+
             const recruitText = recruitedCount > 0 ? `\n` + window.t('gameover.recruit').replace('{count}', recruitedCount) : '';
 
             if (runManager.state === 'victory') {
@@ -2659,6 +2825,7 @@
             ItemStats.recordLoss(equippedIds);
 
             runManager.onRoundLose();
+            clearRunSave(); // run is over — a refresh must not resurrect it
             showGameOverModal('💀 ' + window.t('gameover.title.lose'), window.t('gameover.run.lose'), false);
         } else {
             showGameOverModalDefault();
@@ -2696,6 +2863,7 @@
         newMenuBtn.addEventListener('click', () => {
             modalGameover.classList.remove('active');
             showScreen('menu');
+        updateContinueRunButton();
         });
 
         setTimeout(() => modalGameover.classList.add('active'), 500);
@@ -2744,8 +2912,10 @@
             } else if (isPvP) {
                 // Restart PvP by going back to menu
                 showScreen('menu');
+        updateContinueRunButton();
             } else {
                 showScreen('menu');
+        updateContinueRunButton();
             }
         });
 
@@ -2754,6 +2924,7 @@
         newMenuBtn.addEventListener('click', () => {
             modalGameover.classList.remove('active');
             showScreen('menu');
+        updateContinueRunButton();
         });
 
         setTimeout(() => modalGameover.classList.add('active'), 500);
@@ -2779,7 +2950,6 @@
     const PRESETS_STORAGE_KEY = 'qqChess.presets';
 
     // --- Работа с localStorage (с обработкой ошибок) ---
-
     function loadPresets() {
         try {
             const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
@@ -3137,6 +3307,7 @@
         document.getElementById('btn-raid-loot-skip')?.addEventListener('click', () => {
             document.getElementById('modal-raid-loot').classList.remove('active');
             showScreen('menu');
+        updateContinueRunButton();
         });
     }
 
@@ -3319,6 +3490,7 @@
         }
         document.getElementById('modal-raid-loot').classList.remove('active');
         showScreen('menu');
+        updateContinueRunButton();
     }
 
     // ── Stash viewer (Tarkov grid) ────────────────────────────

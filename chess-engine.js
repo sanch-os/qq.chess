@@ -968,7 +968,16 @@ class ChessEngine {
      * @returns {{move:Object,captured:?PieceEntity,notation:string}|null}
      *          null if the move is illegal or out of turn.
      */
-    makeMove(fromRow, fromCol, toRow, toCol, promotionType) {
+    /**
+     * @param {?{dodged:boolean, venom:boolean}} [forcedOutcomes] - NETWORK
+     *        SYNC: when replaying a move received from the authoritative
+     *        (moving) client, pass the RNG outcomes it already rolled.
+     *        Dodge/venom are random; without this, each client would roll
+     *        its own dice and the boards would silently diverge the first
+     *        time a dodge fired on one side only. `null`/omitted = roll
+     *        locally (normal local play).
+     */
+    makeMove(fromRow, fromCol, toRow, toCol, promotionType, forcedOutcomes) {
         const piece = this.board[fromRow][fromCol];
         if (!piece || piece.color !== this.currentTurn) return null;
 
@@ -980,6 +989,7 @@ class ChessEngine {
         );
         if (!move) return null;
 
+        if (forcedOutcomes) move._forcedOutcomes = forcedOutcomes;
         return this.executeMoveAndUpdate(move);
     }
 
@@ -1065,8 +1075,16 @@ class ChessEngine {
 
             // Venom: if the victim SURVIVED (shield / dodge), it may be
             // frozen for one turn. move._survivor is set by executeMove.
-            if (move._survivor && attackerStats.venomChance > 0 &&
-                Math.random() < attackerStats.venomChance) {
+            // NETWORK SYNC: with forced outcomes, replay the authoritative
+            // client's venom roll instead of rolling locally. The
+            // `move._survivor` gate stays in both branches — venom can
+            // never target a piece that isn't on the board here, even if
+            // a malformed/stale payload claims venom fired.
+            const foVenom = move._forcedOutcomes;
+            const venomFires = foVenom !== undefined
+                ? !!foVenom.venom
+                : (attackerStats.venomChance > 0 && Math.random() < attackerStats.venomChance);
+            if (move._survivor && venomFires) {
                 move._survivor.frozen = (move._survivor.frozen || 0) + 1;
                 snapshot.venomVictim = move._survivor;
             }
@@ -1103,7 +1121,17 @@ class ChessEngine {
         const notation = this.getMoveNotation(move, captured, disamb);
         this.moveHistory[this.moveHistory.length - 1].notation = notation;
 
-        return { move, captured, notation };
+        // `outcomes` = the RNG results of THIS execution, in plain-data
+        // form. The friend-mode sender transmits exactly this object so
+        // the receiver can replay the move deterministically (see
+        // makeMove's forcedOutcomes). Safe for Firebase: booleans only.
+        return {
+            move, captured, notation,
+            outcomes: {
+                dodged: !!move._dodged,
+                venom: !!snapshot.venomVictim
+            }
+        };
     }
 
     /**
@@ -1141,7 +1169,16 @@ class ChessEngine {
         //     then shield (deterministic, simulated too) ---
         if (captured && captured.getStats) {
             const victimStats = captured.getStats();
-            if (!simulate && victimStats.dodgeChance > 0 && Math.random() < victimStats.dodgeChance) {
+            // NETWORK SYNC: if the move carries forced outcomes (replayed
+            // from the authoritative client), use ITS dodge result instead
+            // of rolling locally — otherwise two clients roll independently
+            // and desync. Shield below stays untouched: it's deterministic,
+            // so both clients compute it identically on their own.
+            const fo = move._forcedOutcomes;
+            const dodged = fo !== undefined
+                ? !!fo.dodged
+                : (!simulate && victimStats.dodgeChance > 0 && Math.random() < victimStats.dodgeChance);
+            if (dodged) {
                 move._dodged = true;
                 survivor = captured;
                 survivorMode = 'from';
@@ -1161,7 +1198,13 @@ class ChessEngine {
             captured = epVictim || null;
             if (captured && captured.getStats) {
                 const vStats = captured.getStats();
-                if (!simulate && vStats.dodgeChance > 0 && Math.random() < vStats.dodgeChance) {
+                // NETWORK SYNC: same forced-outcome rule as the direct-
+                // capture dodge above (see comment there).
+                const foEp = move._forcedOutcomes;
+                const dodgedEp = foEp !== undefined
+                    ? !!foEp.dodged
+                    : (!simulate && vStats.dodgeChance > 0 && Math.random() < vStats.dodgeChance);
+                if (dodgedEp) {
                     move._dodged = true;
                     survivor = captured;
                     survivorMode = 'stay';
