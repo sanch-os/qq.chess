@@ -10,13 +10,16 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css?v=7">
     <!-- mobile-drag-drop polyfill removed: drag & drop now uses the Pointer Events API -->
-    <script src="locales.js"></script>
+    <script src="locales.js?v=2"></script>
 </head>
 <body>
     <!-- ===== MAIN MENU SCREEN ===== -->
     <div id="screen-menu" class="screen active">
         <div class="menu-bg-pieces" aria-hidden="true"></div>
-        <button id="btn-settings" class="btn btn-icon-only" style="position: absolute; top: 20px; right: 20px; font-size: 1.5rem; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 50%; width: 45px; height: 45px; cursor: pointer; transition: all 0.2s;" title="Settings">&#9881;&#65039;</button>
+        <!-- FIX: title was hardcoded English ("Settings") regardless of
+             language; data-i18n-title (see app.js's applyLocalization())
+             reuses the existing settings.title key. -->
+        <button id="btn-settings" class="btn btn-icon-only" style="position: absolute; top: 20px; right: 20px; font-size: 1.5rem; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 50%; width: 45px; height: 45px; cursor: pointer; transition: all 0.2s;" data-i18n-title="settings.title" title="Settings">&#9881;&#65039;</button>
         <div class="menu-container">
             <h1 class="menu-title">
                 <span class="title-icon">&#9818;</span>
@@ -38,9 +41,20 @@
                     <span class="btn-icon">&#127968;</span> <span data-i18n="menu.run">Начать забег (Roguelike)</span>
                 </button>
 
+                <!-- Continue-run button: hidden unless a valid run save
+                     exists in localStorage (app.js's updateContinueRunButton
+                     toggles it). The .continue-run-round span is filled by
+                     JS via the menu.continue.round locale key. -->
+                <button id="btn-continue-run" class="btn btn-large" style="width:100%; margin-bottom:10px; display:none; background: linear-gradient(135deg, rgba(72, 187, 120, 0.2), rgba(72, 187, 120, 0.1)); border-color: rgba(72, 187, 120, 0.4);">
+                    <span class="btn-icon">&#9654;&#65039;</span> <span data-i18n="menu.continue">Продолжить забег</span> <span class="continue-run-round"></span>
+                </button>
+
                 <!-- RAID BUTTON -->
+                <!-- FIX: "Рейд" had no data-i18n — permanently Russian
+                     regardless of language selection (found via a
+                     systematic scan of the whole file, see AUDIT_PROTOCOL.md). -->
                 <button id="btn-raid" class="btn btn-large raid-btn" style="width:100%; margin-bottom:10px;">
-                    <span class="btn-icon">&#127919;</span> <span>Рейд</span>
+                    <span class="btn-icon">&#127919;</span> <span data-i18n="menu.raid">Рейд</span>
                 </button>
 
                 <!-- FRIEND MODE BUTTON -->
@@ -60,8 +74,9 @@
                     <a href="editor.html" target="_blank" class="btn btn-outline" style="text-decoration:none; flex:1; text-align:center;">
                         <span class="btn-icon">&#128736;</span> <span data-i18n="menu.editor">Редактор</span>
                     </a>
+                    <!-- FIX: "Схрон" had no data-i18n — same gap as btn-raid above. -->
                     <button id="btn-raid-stash" class="btn btn-outline" style="flex:1;">
-                        <span class="btn-icon">&#127890;</span> <span>Схрон</span>
+                        <span class="btn-icon">&#127890;</span> <span data-i18n="menu.raid_stash">Схрон</span>
                     </button>
                 </div>
             </div>
@@ -91,13 +106,16 @@
 
 
                 <!-- Test Mode Toggle (shown in raid setup or friend mode) -->
+                <!-- FIX: this label's text had no data-i18n anywhere —
+                     permanently Russian. Emoji kept outside the
+                     translated span so it survives the innerHTML swap. -->
                 <div id="test-toggle-wrap" style="display:none; margin-top:10px;">
                     <label class="raid-test-toggle-label">
                         <input type="checkbox" id="test-mode-toggle">
                         <span class="raid-test-toggle-track">
                             <span class="raid-test-toggle-thumb"></span>
                         </span>
-                        <span class="raid-test-toggle-text">🧪 Тест-Драйв <small>(бесконечные ресурсы)</small></span>
+                        <span class="raid-test-toggle-text">🧪 <span data-i18n="test.drive_label">Тест-Драйв</span> <small data-i18n="test.drive_hint">(бесконечные ресурсы)</small></span>
                     </label>
                 </div>
 
@@ -199,6 +217,11 @@
                 <div class="player-card opponent">
                     <div class="player-avatar">&#9818;</div>
                     <div class="player-info">
+                        <!-- Note: this label is overwritten dynamically by
+                             app.js (window.t('game.player.black'/'opponent'))
+                             before the screen is ever shown — the static
+                             text here is just placeholder markup, not a
+                             localization gap. -->
                         <span class="player-name">Компьютер</span>
                         <span id="black-captured" class="captured-pieces"></span>
                     </div>
@@ -213,7 +236,12 @@
                 <div class="player-card player">
                     <div class="player-avatar">&#9814;</div>
                     <div class="player-info">
-                        <span class="player-name">Player</span>
+                        <!-- FIX: unlike the opponent label above, this one
+                             was NEVER touched by app.js — no dynamic
+                             update, no data-i18n. It permanently showed
+                             the English word "Player" regardless of the
+                             selected language, on every single game. -->
+                        <span class="player-name" data-i18n="game.player.you">Player</span>
                         <div class="run-stats" style="font-size:0.85em; margin:5px 0;">
                             <span id="run-gold" class="gold-text" style="color:#f0c048; font-weight:bold;">0 &#129449;</span> | 
                             <span id="run-round" style="color:#a0a0b0;"></span>
@@ -319,7 +347,8 @@
     <!-- Promotion Modal -->
     <div id="modal-promotion" class="modal-overlay">
         <div class="modal glass-panel promotion-modal">
-            <h2 class="modal-title">Превращение пешки</h2>
+            <!-- FIX: had no data-i18n — permanently Russian. -->
+            <h2 class="modal-title" data-i18n="promotion.title">Превращение пешки</h2>
             <div id="promotion-choices" class="promotion-choices"></div>
         </div>
     </div>
@@ -327,7 +356,9 @@
     <!-- ===== PIECE INVENTORY MODAL ===== -->
     <div id="modal-piece-inv" class="modal-overlay">
         <div class="modal glass-panel piece-inv-modal">
-            <button id="piece-inv-close" class="piece-inv-close" title="Закрыть">&times;</button>
+            <!-- FIX: title attribute was hardcoded Russian; data-i18n-title
+                 reuses the existing settings.close key ("Закрыть"/"Close"/"Cerrar"). -->
+            <button id="piece-inv-close" class="piece-inv-close" data-i18n-title="settings.close" title="Закрыть">&times;</button>
             <div class="piece-inv-header">
                 <span id="piece-inv-icon" class="piece-inv-icon">&#9812;</span>
                 <div>
@@ -336,6 +367,10 @@
                 </div>
             </div>
 
+            <!-- Note: slot labels/"Пусто" below are placeholder markup,
+                 immediately overwritten by renderPieceInventorySlots()
+                 (app.js) using window.t('piece.inv.slot') /
+                 window.t('piece.inv.empty_slot') — not a localization gap. -->
             <div class="piece-inv-slots" id="piece-inv-slots">
                 <div class="piece-inv-slot" data-slot="0">
                     <div class="slot-label">Слот 1</div>
@@ -393,70 +428,78 @@
     </div>
 
     <!-- ===== RAID FACTION MODAL ===== -->
+    <!-- FIX: this ENTIRE modal had zero data-i18n attributes — app.js only
+         toggles its `.active` class, never touches any text inside it.
+         Permanently Russian regardless of language, for the whole Raid
+         mode faction-select flow. -->
     <div id="modal-raid" class="modal-overlay">
         <div class="modal glass-panel raid-faction-modal">
             <button class="piece-inv-close modal-close-x" id="btn-raid-modal-close">&times;</button>
             <div class="raid-modal-header">
                 <div class="raid-modal-icon">&#127919;</div>
-                <h2 class="modal-title" style="margin:8px 0 4px;">Выбор Фракции</h2>
-                <p class="modal-text" style="margin:0; font-size:0.9rem; opacity:0.65;">Кем вы пойдёте в рейд?</p>
+                <h2 class="modal-title" style="margin:8px 0 4px;" data-i18n="raid.faction.title">Выбор Фракции</h2>
+                <p class="modal-text" style="margin:0; font-size:0.9rem; opacity:0.65;" data-i18n="raid.faction.subtitle">Кем вы пойдёте в рейд?</p>
             </div>
             <div class="raid-faction-cards">
                 <button id="btn-raid-pmc" class="raid-faction-card pmc-card">
                     <div class="faction-badge">&#128737;&#65039;</div>
-                    <div class="faction-name">ЧВК</div>
-                    <div class="faction-desc">Элитный боец. Играете <strong>белыми</strong>. Снаряжение из вашего схрона.</div>
-                    <div class="faction-tag pmc-tag">PMC &#8226; Белые</div>
+                    <div class="faction-name" data-i18n="raid.faction.pmc.name">ЧВК</div>
+                    <div class="faction-desc" data-i18n="raid.faction.pmc.desc">Элитный боец. Играете <strong>белыми</strong>. Снаряжение из вашего схрона.</div>
+                    <div class="faction-tag pmc-tag" data-i18n="raid.faction.pmc.tag">PMC &#8226; Белые</div>
                 </button>
                 <button id="btn-raid-scav" class="raid-faction-card scav-card">
                     <div class="faction-badge">&#128058;</div>
-                    <div class="faction-name">Дикий</div>
-                    <div class="faction-desc">Мародёр. Играете <strong>чёрными</strong>. Случайный набор фигур. Лутаете врагов.</div>
-                    <div class="faction-tag scav-tag">SCAV &#8226; Чёрные</div>
+                    <div class="faction-name" data-i18n="raid.faction.scav.name">Дикий</div>
+                    <div class="faction-desc" data-i18n="raid.faction.scav.desc">Мародёр. Играете <strong>чёрными</strong>. Случайный набор фигур. Лутаете врагов.</div>
+                    <div class="faction-tag scav-tag" data-i18n="raid.faction.scav.tag">SCAV &#8226; Чёрные</div>
                 </button>
             </div>
         </div>
     </div>
 
     <!-- ===== RAID STASH (TARKOV-STYLE) MODAL ===== -->
+    <!-- FIX: same gap as the faction modal above — entirely untranslated. -->
     <div id="modal-raid-stash" class="modal-overlay">
         <div class="modal glass-panel raid-stash-modal">
             <button class="piece-inv-close modal-close-x" id="btn-raid-stash-close">&times;</button>
             <div class="raid-stash-header">
-                <h2 class="modal-title" style="margin:0;">&#127890; Схрон</h2>
-                <p style="margin:4px 0 0; font-size:0.85rem; opacity:0.6;">Ваши трофеи из рейдов</p>
+                <h2 class="modal-title" style="margin:0;">&#127890; <span data-i18n="raid.stash.title">Схрон</span></h2>
+                <p style="margin:4px 0 0; font-size:0.85rem; opacity:0.6;" data-i18n="raid.stash.subtitle">Ваши трофеи из рейдов</p>
             </div>
             <div class="raid-stash-body">
                 <!-- Left: Piece stash -->
                 <div class="raid-stash-section">
-                    <h3 class="raid-stash-section-title">&#9876;&#65039; Запасные фигуры</h3>
+                    <h3 class="raid-stash-section-title">&#9876;&#65039; <span data-i18n="raid.stash.pieces_title">Запасные фигуры</span></h3>
                     <div id="raid-stash-pieces" class="raid-piece-stash"></div>
-                    <p id="raid-stash-pieces-empty" class="raid-stash-empty">Нет запасных фигур</p>
+                    <p id="raid-stash-pieces-empty" class="raid-stash-empty" data-i18n="raid.stash.pieces_empty">Нет запасных фигур</p>
                 </div>
                 <!-- Right: Item stash (Tarkov grid) -->
                 <div class="raid-stash-section">
-                    <h3 class="raid-stash-section-title">&#128230; Предметы</h3>
+                    <h3 class="raid-stash-section-title">&#128230; <span data-i18n="raid.stash.items_title">Предметы</span></h3>
                     <div id="raid-stash-items" class="raid-item-grid"></div>
-                    <p id="raid-stash-items-empty" class="raid-stash-empty">Схрон пуст. Сыграйте рейд!</p>
+                    <p id="raid-stash-items-empty" class="raid-stash-empty" data-i18n="raid.stash.items_empty">Схрон пуст. Сыграйте рейд!</p>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- ===== RAID LOOT MODAL (post-game) ===== -->
+    <!-- FIX: same gap — entirely untranslated. The confirm button keeps its
+         live item-count <span> outside the translated text (see comment
+         inline) so the count-update code in app.js needs no changes. -->
     <div id="modal-raid-loot" class="modal-overlay">
         <div class="modal glass-panel raid-loot-modal">
             <div class="raid-loot-header">
                 <div style="font-size:3rem; line-height:1;">&#127942;</div>
-                <h2 class="modal-title">Рейд завершён!</h2>
-                <p class="modal-text" style="opacity:0.7; margin:0 0 4px;">Выберите до 3 предметов для схрона</p>
+                <h2 class="modal-title" data-i18n="raid.loot.title">Рейд завершён!</h2>
+                <p class="modal-text" style="opacity:0.7; margin:0 0 4px;" data-i18n="raid.loot.subtitle">Выберите до 3 предметов для схрона</p>
             </div>
             <div id="raid-loot-grid" class="raid-loot-grid"></div>
             <div class="raid-loot-actions">
                 <button id="btn-raid-loot-confirm" class="btn btn-primary btn-large">
-                    &#128230; Забрать в схрон (<span id="raid-loot-count">0</span>/3)
+                    &#128230; <span data-i18n="raid.loot.confirm_btn">Забрать в схрон</span> (<span id="raid-loot-count">0</span>/3)
                 </button>
-                <button id="btn-raid-loot-skip" class="btn btn-outline">
+                <button id="btn-raid-loot-skip" class="btn btn-outline" data-i18n="raid.loot.skip_btn">
                     Выйти без лута
                 </button>
             </div>
@@ -464,26 +507,34 @@
     </div>
 
     <!-- ===== MODAL: FRIEND LOBBY ===== -->
+    <!-- FIX: this ENTIRE modal had zero data-i18n attributes, and even the
+         JS-side dynamic text (app.js's _showCoinResultPanel and the
+         ready-button click handler) hardcoded Russian strings directly
+         instead of going through window.t() — permanently Russian
+         regardless of language, for the whole Friend Mode lobby flow.
+         The placeholder attribute uses data-i18n-placeholder, since
+         data-i18n alone (innerHTML-based) can't reach an <input>'s
+         placeholder text. -->
     <div id="modal-friend-lobby" class="modal-overlay" style="display:none;">
         <div class="modal-box glass-panel" style="max-width:380px; text-align:center;">
-            <h2 style="margin-bottom:16px;">&#128101; Игра с другом</h2>
+            <h2 style="margin-bottom:16px;">&#128101; <span data-i18n="menu.friend">Игра с другом</span></h2>
             <div id="friend-lobby-status" style="min-height:40px; margin-bottom:16px; color:var(--text-muted); font-size:0.9em;"></div>
 
             <div id="friend-lobby-main">
                 <button id="btn-create-room" class="btn btn-primary" style="width:100%; margin-bottom:10px;">
-                    &#127981; Создать комнату
+                    &#127981; <span data-i18n="friend.create_room">Создать комнату</span>
                 </button>
-                <div style="margin-bottom:10px; color:var(--text-muted); font-size:0.85em;">— или —</div>
+                <div style="margin-bottom:10px; color:var(--text-muted); font-size:0.85em;">— <span data-i18n="friend.or">или</span> —</div>
                 <div style="display:flex; gap:8px;">
-                    <input id="join-room-code-input" class="form-input" placeholder="Код комнаты" style="flex:1; text-transform:uppercase; letter-spacing:2px; font-size:1.1em; text-align:center; padding:10px; background:rgba(255,255,255,0.07); border:1px solid var(--glass-border); border-radius:8px; color:var(--text-primary); outline:none;" maxlength="5">
-                    <button id="btn-join-room-submit" class="btn btn-secondary">Войти</button>
+                    <input id="join-room-code-input" class="form-input" data-i18n-placeholder="friend.room_code_placeholder" placeholder="Код комнаты" style="flex:1; text-transform:uppercase; letter-spacing:2px; font-size:1.1em; text-align:center; padding:10px; background:rgba(255,255,255,0.07); border:1px solid var(--glass-border); border-radius:8px; color:var(--text-primary); outline:none;" maxlength="5">
+                    <button id="btn-join-room-submit" class="btn btn-secondary" data-i18n="friend.join_room_btn">Войти</button>
                 </div>
             </div>
 
             <div id="friend-room-created" style="display:none; margin-top:16px;">
-                <p style="color:var(--text-muted); font-size:0.85em; margin-bottom:8px;">Твой код комнаты — отправь другу:</p>
+                <p style="color:var(--text-muted); font-size:0.85em; margin-bottom:8px;" data-i18n="friend.your_code_text">Твой код комнаты — отправь другу:</p>
                 <div id="room-code-display" style="font-size:2.5em; font-weight:bold; letter-spacing:8px; color:var(--accent-gold); margin-bottom:12px;"></div>
-                <p id="room-waiting-text" style="color:var(--text-muted); font-size:0.85em;">⏳ Ожидание подключения друга...</p>
+                <p id="room-waiting-text" style="color:var(--text-muted); font-size:0.85em;">⏳ <span data-i18n="friend.waiting_text">Ожидание подключения друга...</span></p>
             </div>
 
             <!-- Coin flip result + ready-up panel (shown after animation) -->
@@ -492,36 +543,37 @@
                 <p id="coin-result-text" style="font-size:1.3em; font-weight:bold; margin-bottom:4px;"></p>
                 <p id="coin-ready-count" style="color:var(--text-muted); font-size:0.85em; margin-bottom:16px;">0/2 игроков готовы</p>
                 <button id="btn-lobby-ready" class="btn btn-primary" style="width:100%; font-size:1.1em;">
-                    🎯 Готов к расстановке!
+                    🎯 <span data-i18n="friend.ready_btn">Готов к расстановке!</span>
                 </button>
             </div>
 
-            <button id="btn-friend-lobby-back" class="btn btn-outline" style="width:100%; margin-top:20px;">← Назад</button>
+            <button id="btn-friend-lobby-back" class="btn btn-outline" style="width:100%; margin-top:20px;">← <span data-i18n="setup.btn.back">Назад</span></button>
         </div>
     </div>
 
     <!-- Piece inventory hover tooltip (shown when dragging item over piece) -->
+    <!-- FIX: header text had no data-i18n — permanently Russian. -->
     <div id="piece-inv-hover-tooltip" class="piece-inv-hover-tooltip" style="display:none;">
-        <div class="piht-header">Инвентарь фигуры</div>
+        <div class="piht-header" data-i18n="piece.inv.hover_title">Инвентарь фигуры</div>
         <div class="piht-slots"></div>
         <div class="piht-count"></div>
     </div>
 
     <script src="piece-entity.js?v=3"></script>
-    <script src="items-db.js?v=3"></script>
+    <script src="items-db.js?v=4"></script>
     <script src="encounters.js?v=3"></script>
-    <script src="run-manager.js?v=3"></script>
-    <script src="chess-engine.js?v=3"></script>
+    <script src="run-manager.js?v=4"></script>
+    <script src="chess-engine.js?v=4"></script>
     <script src="chess-ai.js?v=3"></script>
     <script src="item-stats.js?v=3"></script>
     <script src="pieces-svg.js?v=3"></script>
     <script src="extraction-manager.js?v=2"></script>
-    <script src="app.js?v=10"></script>
+    <script src="app.js?v=11"></script>
     <script src="tutorial.js?v=1"></script>
     <!-- Firebase Multiplayer -->
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-    <script src="multiplayer.js"></script>
+    <script src="multiplayer.js?v=2"></script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"f0f03d0605bf45f1a3b17cf7d5e6861f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 </body>
 </html>

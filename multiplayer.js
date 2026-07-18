@@ -48,6 +48,12 @@ function generateRoomCode() {
 window.Multiplayer = (function () {
     let _roomCode = null;
     let _role = null; // 'host' or 'guest'
+    /** FIX: onBothLobbyReady is driven by TWO 'value' listeners (host +
+     *  guest lobby_ready), each of which re-reads both flags via nested
+     *  once(). Once both flags were true, EVERY subsequent value event
+     *  re-fired the callback. This latch guarantees exactly one
+     *  invocation per room session. */
+    let _bothLobbyFired = false;
     let _callbacks = {};
     let _listeners = [];
 
@@ -91,7 +97,8 @@ window.Multiplayer = (function () {
         function _checkLobbyReady() {
             db.ref(`rooms/${_roomCode}/host/lobby_ready`).once('value').then(hostSnap => {
                 db.ref(`rooms/${_roomCode}/guest/lobby_ready`).once('value').then(guestSnap => {
-                    if (hostSnap.val() && guestSnap.val() && _callbacks.onBothLobbyReady) {
+                    if (hostSnap.val() && guestSnap.val() && !_bothLobbyFired && _callbacks.onBothLobbyReady) {
+                        _bothLobbyFired = true;
                         _callbacks.onBothLobbyReady();
                     }
                 });
@@ -128,6 +135,7 @@ window.Multiplayer = (function () {
     function createRoom(callbacks) {
         _callbacks = callbacks || {};
         _role = 'host';
+        _bothLobbyFired = false;
         _roomCode = generateRoomCode();
 
         _claimRoomCode(_roomCode, 1);
@@ -191,6 +199,7 @@ window.Multiplayer = (function () {
     function joinRoom(code, callbacks) {
         _callbacks = callbacks || {};
         _role = 'guest';
+        _bothLobbyFired = false;
 
         const normalized = (code || '').toUpperCase().trim();
         if (!ROOM_CODE_PATTERN.test(normalized)) {
@@ -235,7 +244,8 @@ window.Multiplayer = (function () {
             function _checkLobbyReady() {
                 db.ref(`rooms/${_roomCode}/host/lobby_ready`).once('value').then(hostSnap => {
                     db.ref(`rooms/${_roomCode}/guest/lobby_ready`).once('value').then(guestSnap => {
-                        if (hostSnap.val() && guestSnap.val() && _callbacks.onBothLobbyReady) {
+                        if (hostSnap.val() && guestSnap.val() && !_bothLobbyFired && _callbacks.onBothLobbyReady) {
+                            _bothLobbyFired = true;
                             _callbacks.onBothLobbyReady();
                         }
                     });
@@ -291,6 +301,7 @@ window.Multiplayer = (function () {
         _listeners.forEach(({ ref, event, cb }) => ref.off(event, cb));
         _listeners = [];
         _roomCode = null;
+        _bothLobbyFired = false;
         _role = null;
         _callbacks = {};
     }

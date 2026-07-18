@@ -59,11 +59,25 @@
        roll in ChessEngine.executeMove to check "is this the piece's last
        shield charge?" and swap in a different (higher) chance for that case.
 
-   None of the above are touched in this pass — they are flagged, not
-   guessed at, so a future engine/economy iteration can implement them
-   deliberately with tests, the same way venomChance, lifesteal and
-   shieldOnHeavyCapture were implemented as first-class ChessEngine
-   features rather than dangling data fields.
+   STATUS UPDATE (items-integrity pass): of the twelve, EIGHT are now
+   implemented as first-class mechanics with tests:
+     • doubleGoldOnQueenCapture / tripleGoldOnHeavyCapture / doubleGoldAll
+       — gold-multiplier stage in ChessEngine.executeMoveAndUpdate;
+     • goldLossPerMove — per-quiet-move negative goldEarned accrual
+       (consumer in app.js clamps the run total at zero);
+     • goldPerPiecePerTurn — per-move board-scan economy tick;
+     • promoteOnCapture — capture-triggered pawn promotion in executeMove;
+     • dodgeOnLastShield — last-shield-charge dodge override in both
+       dodge-roll sites (direct capture and en passant);
+     • itemDropChance — post-capture random-item roll in app.js's loot
+       path (economy layer, so the RNG never touches multiplayer sync);
+     • shopDiscount — effective-price computation in the shop UI.
+   The remaining FOUR (experience_orb, angelic_halo, soul_gem, chaos_gem)
+   need whole subsystems that don't exist; they are marked `disabled: true`
+   below and filtered out of every item pool until those systems land.
+   test-items-integrity.js enforces the invariant going forward: every
+   modifier key must either have a consumer in code or sit on a disabled
+   item.
    ========================================================================= */
 
 const ITEMS_DB = {
@@ -1218,6 +1232,15 @@ const ITEMS_DB = {
     },
 
     experience_orb: {
+        // DISABLED: excluded from all item pools (shop, random loot,
+        // creative catalog) until its mechanic is actually implemented —
+        // selling a legendary that does nothing is worse than not
+        // selling it. Needs: one-shot "next purchase" discount state (and its economy is
+        // incoherent: cost 35 for a -20 one-time discount is a guaranteed
+        // net loss — needs a redesign, not just a hook).
+        // getItemById() still resolves it, so old saves / encounter
+        // references stay valid instead of crashing.
+        disabled: true,
         id: 'experience_orb',
         name: { ru: "Шар опыта", en: "Experience Orb", es: "Orbe de Experiencia" },
         description: { ru: "Следующий предмет в магазине стоит -20 золота.", en: "The next item in the shop costs -20 gold.", es: "El siguiente objeto en la tienda cuesta -20 de oro." },
@@ -1282,6 +1305,14 @@ const ITEMS_DB = {
     },
 
     soul_gem: {
+        // DISABLED: excluded from all item pools (shop, random loot,
+        // creative catalog) until its mechanic is actually implemented —
+        // selling a legendary that does nothing is worse than not
+        // selling it. Needs: a mid-game piece-revival system (placement rules, undo
+        // support, MP outcome-sync) that does not exist yet.
+        // getItemById() still resolves it, so old saves / encounter
+        // references stay valid instead of crashing.
+        disabled: true,
         id: 'soul_gem',
         name: { ru: 'Камень Души', en: "Soul Gem", es: "Gema del Alma" },
         description: { ru: 'При взятии случайная мертвая дружественная фигура возрождается.', en: "When piece captures, revives a random friendly piece.", es: "Cuando la pieza captura, revive una pieza aliada al azar." },
@@ -1318,6 +1349,15 @@ const ITEMS_DB = {
     },
 
     angelic_halo: {
+        // DISABLED: excluded from all item pools (shop, random loot,
+        // creative catalog) until its mechanic is actually implemented —
+        // selling a legendary that does nothing is worse than not
+        // selling it. Needs: a piece-revival system; also conceptually dead in the current
+        // run flow — armies are rebuilt from scratch every round, so
+        // "revive on win" has nothing to restore.
+        // getItemById() still resolves it, so old saves / encounter
+        // references stay valid instead of crashing.
+        disabled: true,
         id: 'angelic_halo',
         name: { ru: 'Ангельский Нимб', en: "Angelic Halo", es: "Halo Angelical" },
         description: { ru: 'Возрождает фигуру один раз после смерти.', en: "Revives the piece once after dying.", es: "Revive a la pieza una vez después de morir." },
@@ -1333,6 +1373,14 @@ const ITEMS_DB = {
     },
 
     chaos_gem: {
+        // DISABLED: excluded from all item pools (shop, random loot,
+        // creative catalog) until its mechanic is actually implemented —
+        // selling a legendary that does nothing is worse than not
+        // selling it. Needs: a turn-counter-driven random-effect dispatcher that does
+        // not exist yet.
+        // getItemById() still resolves it, so old saves / encounter
+        // references stay valid instead of crashing.
+        disabled: true,
         id: 'chaos_gem',
         name: { ru: 'Камень Хаоса', en: "Chaos Gem", es: "Gema del Caos" },
         description: { ru: 'Случайный эффект каждые 3 хода.', en: "Random effects every 3 turns.", es: "Efectos aleatorios cada 3 turnos." },
@@ -1435,7 +1483,8 @@ function _shuffleItems(arr) {
 }
 
 function getRandomItems(count, excludeIds = []) {
-    const pool = Object.values(ITEMS_DB).filter(i => !excludeIds.includes(i.id));
+    // `disabled` items never enter any pool (see the per-item comments).
+    const pool = Object.values(ITEMS_DB).filter(i => !i.disabled && !excludeIds.includes(i.id));
     const shuffled = _shuffleItems(pool.slice());
     const result = [];
     for (let i = 0; i < Math.min(count, shuffled.length); i++) {
@@ -1462,7 +1511,8 @@ function getShopItems(count, playerGold, luckBonus = 0) {
         legendary: 5 + luckBonus * 2
     };
     const totalWeight = weights.common + weights.rare + weights.epic + weights.legendary;
-    const pool = Object.values(ITEMS_DB);
+    // `disabled` items never enter the shop (see the per-item comments).
+    const pool = Object.values(ITEMS_DB).filter(i => !i.disabled);
     const result = [];
     const used = new Set();
 

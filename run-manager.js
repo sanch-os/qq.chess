@@ -343,14 +343,18 @@ class RunManager {
     /**
      * Buys an item into the stash if gold and space allow.
      * @param {Object} item
-     * @returns {boolean|'full'} true on success, 'full' if the stash has no
-     *          room, false if the player can't afford it.
+     * @param {number} [costOverride] - Effective price to charge (e.g. a
+     *        merchants_ring shop discount). The item itself is stored with
+     *        its ORIGINAL catalog cost, so sell value / balance data stay
+     *        anchored to the catalog, not to the discounted purchase.
+     * @returns {boolean|'full'}
      */
-    buyItem(item) {
-        if (this.gold < item.cost) return false;
+    buyItem(item, costOverride) {
+        const price = (typeof costOverride === 'number') ? costOverride : item.cost;
+        if (this.gold < price) return false;
         if (this.playerItems.length >= STASH_LIMIT) return 'full';
-        this.gold -= item.cost;
-        this.playerItems.push({ ...item });
+        this.gold -= price;
+        this.playerItems.push({ ...item, modifiers: { ...(item.modifiers || {}) } });
         return true;
     }
 
@@ -456,5 +460,87 @@ class RunManager {
             total: this.totalRounds,
             encounter: this.getCurrentEncounter(),
         };
+    }
+
+    /* ======================================================================
+       Persistence (run save / restore)
+       ======================================================================
+       Between-round checkpointing. Only meta-state is saved: after every
+       round win collectItemsFromBoard() pulls all equipment back into the
+       stash, so at shop/setup time the ENTIRE run is exactly {gold, round,
+       stash, recruits, results} — no board state needed.
+
+       Stash items are stored as catalog IDs only and re-hydrated from
+       ITEMS_DB on restore. This keeps saves tiny, immune to the "stale
+       modifiers object" class of bugs, and self-healing across balance
+       patches: unknown/removed IDs are silently dropped instead of
+       resurrecting outdated item definitions. */
+
+    /** Save-format version. Bump on breaking changes to the payload. */
+    static get SAVE_VERSION() { return 1; }
+
+    /**
+     * @returns {Object} Plain-data snapshot of the run, safe for
+     *          JSON.stringify/localStorage (no entities, no functions).
+     */
+    serialize() {
+        return {
+            v: RunManager.SAVE_VERSION,
+            savedAt: Date.now(),
+            active: this.active,
+            gold: this.gold,
+            currentRound: this.currentRound,
+            capturesThisRound: this.capturesThisRound,
+            startingItemsGiven: this.startingItemsGiven,
+            bonusPieces: { ...this.bonusPieces },
+            roundResults: this.roundResults.map(r => ({ ...r })),
+            playerItems: this.playerItems.map(it => it.id),
+        };
+    }
+
+    /**
+     * Restores a run from a serialize() payload. Defensive by design:
+     * validates shape/version, whitelists every field, and re-hydrates
+     * stash items from the live catalog.
+     * @param {Object} data - Parsed save payload.
+     * @returns {boolean} True if the run was restored; false if the
+     *          payload is missing/invalid (state is left reset).
+     */
+    restore(data) {
+        if (!data || typeof data !== 'object') return false;
+        if (data.v !== RunManager.SAVE_VERSION) return false;
+        if (!data.active) return false;
+        if (!Number.isInteger(data.currentRound) || data.currentRound < 0) return false;
+
+        this.reset(); // fresh encounters sequence + clean defaults
+
+        this.active = true;
+        this.gold = Number.isFinite(data.gold) ? Math.max(0, Math.floor(data.gold)) : 0;
+        this.currentRound = data.currentRound;
+        this.capturesThisRound = Number.isInteger(data.capturesThisRound) ? data.capturesThisRound : 0;
+        this.startingItemsGiven = !!data.startingItemsGiven;
+        this.state = 'setup'; // resume screen is decided by app.js, not the save
+
+        if (data.bonusPieces && typeof data.bonusPieces === 'object') {
+            for (const [type, n] of Object.entries(data.bonusPieces)) {
+                if (type !== 'king' && Number.isInteger(n) && n > 0) this.bonusPieces[type] = n;
+            }
+        }
+        if (Array.isArray(data.roundResults)) {
+            this.roundResults = data.roundResults
+                .filter(r => r && Number.isInteger(r.round) && (r.result === 'win' || r.result === 'lose'))
+                .map(r => ({ round: r.round, result: r.result }));
+        }
+        if (Array.isArray(data.playerItems)) {
+            for (const id of data.playerItems) {
+                if (this.playerItems.length >= STASH_LIMIT) break;
+                const item = (typeof id === 'string') ? getItemById(id) : null;
+                if (item) {
+                    // Same deep-clone-of-modifiers rule as every equip path.
+                    this.playerItems.push({ ...item, modifiers: { ...(item.modifiers || {}) } });
+                }
+            }
+        }
+        return true;
     }
 }

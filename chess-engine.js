@@ -968,7 +968,16 @@ class ChessEngine {
      * @returns {{move:Object,captured:?PieceEntity,notation:string}|null}
      *          null if the move is illegal or out of turn.
      */
-    makeMove(fromRow, fromCol, toRow, toCol, promotionType) {
+    /**
+     * @param {?{dodged:boolean, venom:boolean}} [forcedOutcomes] - NETWORK
+     *        SYNC: when replaying a move received from the authoritative
+     *        (moving) client, pass the RNG outcomes it already rolled.
+     *        Dodge/venom are random; without this, each client would roll
+     *        its own dice and the boards would silently diverge the first
+     *        time a dodge fired on one side only. `null`/omitted = roll
+     *        locally (normal local play).
+     */
+    makeMove(fromRow, fromCol, toRow, toCol, promotionType, forcedOutcomes) {
         const piece = this.board[fromRow][fromCol];
         if (!piece || piece.color !== this.currentTurn) return null;
 
@@ -980,6 +989,7 @@ class ChessEngine {
         );
         if (!move) return null;
 
+        if (forcedOutcomes) move._forcedOutcomes = forcedOutcomes;
         return this.executeMoveAndUpdate(move);
     }
 
@@ -1050,6 +1060,23 @@ class ChessEngine {
                     if (dist >= 3) bonusGold += attackerStats.goldOnLongCapture;
                 }
 
+                // --- Gold MULTIPLIERS (applied after all additive fields;
+                //     items-db header listed these as dead keys — now live) ---
+                // double_loot: x2 gold for capturing a queen.
+                if (attackerStats.doubleGoldOnQueenCapture && capturedType === 'queen') {
+                    bonusGold *= 2;
+                }
+                // scroll_of_greed: x3 gold for capturing a heavy piece.
+                if (attackerStats.tripleGoldOnHeavyCapture &&
+                    (capturedType === 'rook' || capturedType === 'queen')) {
+                    bonusGold *= 3;
+                }
+                // demonic_pact: x2 ALL gold earned by this piece (its
+                // shield: -1 drawback already works via stat aggregation).
+                if (attackerStats.doubleGoldAll) {
+                    bonusGold *= 2;
+                }
+
                 if (attackerStats.shieldOnHeavyCapture > 0 &&
                     (capturedType === 'rook' || capturedType === 'queen')) {
                     movedPiece.shield = (movedPiece.shield || 0) + attackerStats.shieldOnHeavyCapture;
@@ -1063,12 +1090,55 @@ class ChessEngine {
                 }
             }
 
+            // cursed_gold: -N gold for every move by this piece that
+            // captures nothing. Accrues as NEGATIVE goldEarned; the
+            // consumer (app.js) clamps the run total at zero.
+            if (!captured && attackerStats.goldLossPerMove > 0) {
+                if (!this.goldEarned) this.goldEarned = { white: 0, black: 0 };
+                this.goldEarned[movedPiece.color] =
+                    (this.goldEarned[movedPiece.color] || 0) - attackerStats.goldLossPerMove;
+            }
+
             // Venom: if the victim SURVIVED (shield / dodge), it may be
             // frozen for one turn. move._survivor is set by executeMove.
-            if (move._survivor && attackerStats.venomChance > 0 &&
-                Math.random() < attackerStats.venomChance) {
+            // NETWORK SYNC: with forced outcomes, replay the authoritative
+            // client's venom roll instead of rolling locally. The
+            // `move._survivor` gate stays in both branches — venom can
+            // never target a piece that isn't on the board here, even if
+            // a malformed/stale payload claims venom fired.
+            const foVenom = move._forcedOutcomes;
+            const venomFires = foVenom !== undefined
+                ? !!foVenom.venom
+                : (attackerStats.venomChance > 0 && Math.random() < attackerStats.venomChance);
+            if (move._survivor && venomFires) {
                 move._survivor.frozen = (move._survivor.frozen || 0) + 1;
                 snapshot.venomVictim = move._survivor;
+            }
+        }
+
+        // kings_signet: +N gold per friendly piece on the board, paid on
+        // every move the owner makes. The signet sits on the KING, so the
+        // rate is read via a board scan (the moving piece is usually not
+        // the carrier). Real moves only — executeMoveAndUpdate is never
+        // called from AI search, so this can't leak into simulations.
+        {
+            const ownerColor = this.currentTurn; // turn hasn't switched yet
+            let perPieceRate = 0, ownPieces = 0;
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    const p = this.board[r][c];
+                    if (p && p.color === ownerColor) {
+                        ownPieces++;
+                        if (p.getStats) {
+                            perPieceRate += p.getStats().goldPerPiecePerTurn || 0;
+                        }
+                    }
+                }
+            }
+            if (perPieceRate > 0 && ownPieces > 0) {
+                if (!this.goldEarned) this.goldEarned = { white: 0, black: 0 };
+                this.goldEarned[ownerColor] =
+                    (this.goldEarned[ownerColor] || 0) + perPieceRate * ownPieces;
             }
         }
 
@@ -1103,7 +1173,17 @@ class ChessEngine {
         const notation = this.getMoveNotation(move, captured, disamb);
         this.moveHistory[this.moveHistory.length - 1].notation = notation;
 
-        return { move, captured, notation };
+        // `outcomes` = the RNG results of THIS execution, in plain-data
+        // form. The friend-mode sender transmits exactly this object so
+        // the receiver can replay the move deterministically (see
+        // makeMove's forcedOutcomes). Safe for Firebase: booleans only.
+        return {
+            move, captured, notation,
+            outcomes: {
+                dodged: !!move._dodged,
+                venom: !!snapshot.venomVictim
+            }
+        };
     }
 
     /**
@@ -1141,7 +1221,23 @@ class ChessEngine {
         //     then shield (deterministic, simulated too) ---
         if (captured && captured.getStats) {
             const victimStats = captured.getStats();
-            if (!simulate && victimStats.dodgeChance > 0 && Math.random() < victimStats.dodgeChance) {
+            // NETWORK SYNC: if the move carries forced outcomes (replayed
+            // from the authoritative client), use ITS dodge result instead
+            // of rolling locally — otherwise two clients roll independently
+            // and desync. Shield below stays untouched: it's deterministic,
+            // so both clients compute it identically on their own.
+            const fo = move._forcedOutcomes;
+            // last_stand: on the piece's FINAL shield charge, a higher
+            // dodge chance kicks in (take the better of the two, capped —
+            // mirrors piece-entity's MAX_PROBABILITY).
+            let dodgeChance = victimStats.dodgeChance || 0;
+            if (captured.shield === 1 && (victimStats.dodgeOnLastShield || 0) > dodgeChance) {
+                dodgeChance = Math.min(victimStats.dodgeOnLastShield, 0.95);
+            }
+            const dodged = fo !== undefined
+                ? !!fo.dodged
+                : (!simulate && dodgeChance > 0 && Math.random() < dodgeChance);
+            if (dodged) {
                 move._dodged = true;
                 survivor = captured;
                 survivorMode = 'from';
@@ -1161,7 +1257,18 @@ class ChessEngine {
             captured = epVictim || null;
             if (captured && captured.getStats) {
                 const vStats = captured.getStats();
-                if (!simulate && vStats.dodgeChance > 0 && Math.random() < vStats.dodgeChance) {
+                // NETWORK SYNC: same forced-outcome rule as the direct-
+                // capture dodge above (see comment there).
+                const foEp = move._forcedOutcomes;
+                // last_stand applies to en-passant survival too.
+                let dodgeChanceEp = vStats.dodgeChance || 0;
+                if (captured.shield === 1 && (vStats.dodgeOnLastShield || 0) > dodgeChanceEp) {
+                    dodgeChanceEp = Math.min(vStats.dodgeOnLastShield, 0.95);
+                }
+                const dodgedEp = foEp !== undefined
+                    ? !!foEp.dodged
+                    : (!simulate && dodgeChanceEp > 0 && Math.random() < dodgeChanceEp);
+                if (dodgedEp) {
                     move._dodged = true;
                     survivor = captured;
                     survivorMode = 'stay';
@@ -1198,6 +1305,14 @@ class ChessEngine {
         if (!effectivePromotion && piece.type === 'pawn') {
             const lastRank = piece.color === 'white' ? 0 : BOARD_SIZE - 1;
             if (to.row === lastRank) effectivePromotion = 'queen'; // defensive auto-queen
+        }
+        // second_chance: a pawn carrying promoteOnCapture promotes on ANY
+        // actual kill (not on a shielded/dodged attempt — `captured` is
+        // already null on those paths). Deterministic, so it applies in
+        // simulation too and the AI search sees it correctly.
+        if (!effectivePromotion && piece.type === 'pawn' && captured &&
+            piece.getStats && piece.getStats().promoteOnCapture) {
+            effectivePromotion = 'queen';
         }
         if (effectivePromotion && piece.type === 'pawn') {
             const promoted = new PieceEntity(effectivePromotion, piece.color, piece.id);
