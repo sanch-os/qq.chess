@@ -1,74 +1,97 @@
-# CHANGES — сессия Phase 1 (Стабилизация)
+/* Репродукция мультиплеерного desync + проверка фикса.
+process.chdir(require('path').join(__dirname, '..'));
+   Клиент A (ходящий, авторитетный) и клиент B (получатель) исполняют
+   один и тот же ход-взятие по фигуре с dodgeChance=0.5, но с разными
+   последовательностями Math.random. */
+const fs = require('fs');
+const src = fs.readFileSync('./piece-entity.js', 'utf8') + '\n' +
+            fs.readFileSync('./chess-engine.js', 'utf8') + '\n' +
+            'globalThis.PieceEntity = PieceEntity; globalThis.ChessEngine = ChessEngine;';
+(0, eval)(src);
 
-## ⚠️ Восстановлены имена файлов
+const DODGE_ITEM = { id: 'evasion_cloak', allowedPieces: ['all'], cost: 0,
+                     modifiers: { dodgeChance: 0.5 } };
 
-В исходном состоянии репозитория имена файлов не соответствовали содержимому
-(реальный `app.js` лежал в `apply_translations.py`, движок — в `convert.js`,
-мультиплеер — в `package.json` и т.д.). В этом архиве **все файлы лежат под
-правильными именами** и соответствуют ссылкам в `index.html`. Одноразовые
-утилитные скрипты (python/powershell-патчеры) и устаревший `index2_0.html`
-в архив не включены.
+function makeClient() {
+    const e = new ChessEngine();
+    e.reset();
+    // Белая ладья a1, чёрная пешка a5 с плащом уклонения, короли.
+    e.placePiece(7, 0, 'rook', 'white');
+    const victim = new PieceEntity('pawn', 'black', 500);
+    victim.setItem(0, { ...DODGE_ITEM, modifiers: { ...DODGE_ITEM.modifiers } });
+    e.setPiece(3, 0, victim);
+    e.placePiece(7, 4, 'king', 'white');
+    e.placePiece(0, 4, 'king', 'black');
+    return e;
+}
 
-## 1. Мультиплеер: фикс рассинхрона (критический)
+function boardKey(e) {
+    let s = '';
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        const p = e.board[r][c];
+        s += p ? `${p.color[0]}${p.type[0]}${r}${c};` : '';
+    }
+    return s;
+}
 
-- `chess-engine.js` — `makeMove()` принимает `forcedOutcomes`; броски
-  dodge (прямое взятие + en passant) и venom применяют переданные исходы
-  вместо локального `Math.random()`. `executeMoveAndUpdate()` возвращает
-  `outcomes: {dodged, venom}` для передачи по сети.
-- `app.js` — отправка хода собирает минимальный DTO `{from, to, promotion}`
-  + `outcomes` вместо сырого move-объекта с живым `PieceEntity` внутри
-  (`_survivor`). Оба receive-хендлера применяют исходы отправителя.
-- `multiplayer.js` — latch `_bothLobbyFired`: `onBothLobbyReady` срабатывает
-  ровно один раз за сессию комнаты.
-- Выкатка безопасна при несинхронном обновлении клиентов: старый получатель
-  игнорирует `outcomes`, новый без `outcomes` откатывается на локальный бросок.
+const realRandom = Math.random;
+function withRandom(seq, fn) {
+    let i = 0;
+    Math.random = () => seq[Math.min(i++, seq.length - 1)];
+    try { return fn(); } finally { Math.random = realRandom; }
+}
 
-## 2. Сохранение забега (Continue Run)
+// ── Сценарий 1: СТАРОЕ поведение (получатель бросает кубик сам) ──
+let A = makeClient(), B = makeClient();
+withRandom([0.1], () => A.makeMove(7, 0, 3, 0));            // A: 0.1 < 0.5 → dodge сработал
+withRandom([0.9], () => B.makeMove(7, 0, 3, 0));            // B: 0.9 > 0.5 → пешка убита
+const desynced = boardKey(A) !== boardKey(B);
+console.log('1. Старый путь (независимые броски): desync =', desynced ? 'ДА (баг воспроизведён)' : 'нет');
 
-- `run-manager.js` — `serialize()` / `restore()`. Предметы хранятся по id
-  и регидрируются из каталога (сейвы самоизлечиваются после баланс-патчей).
-  `restore()` валидирует версию/типы и санитизирует значения.
-- `app.js` — чекпоинты между раундами: старт забега, победа раунда, каждая
-  покупка/продажа, выход из магазина; очистка при поражении/финальной победе.
-  Оффер магазина пинится в сейв — рефреш не рероллит магазин.
-- `index.html` / `locales.js` — кнопка «Продолжить забег (Раунд N)» в меню,
-  ключи ru/en/es.
-- Середина боя намеренно не сохраняется: F5 возвращает к расстановке
-  текущего раунда (анти-savescum).
+// ── Сценарий 2: НОВЫЙ путь (исходы передаются) ──
+A = makeClient(); B = makeClient();
+const resA = withRandom([0.1], () => A.makeMove(7, 0, 3, 0));
+console.log('   A outcomes:', JSON.stringify(resA.outcomes));
+// B применяет исходы A, при этом его локальный RNG говорил бы обратное:
+const resB = withRandom([0.9], () => B.makeMove(7, 0, 3, 0, null, resA.outcomes));
+console.log('2. Новый путь (forcedOutcomes): boards equal =', boardKey(A) === boardKey(B),
+            '| B._dodged =', !!resB.move._dodged);
 
-## 3. Предметы: 8 механик реализовано, 4 отключено
+// ── Сценарий 3: обратный случай — у A НЕ увернулась, у B "хотела" ──
+A = makeClient(); B = makeClient();
+const resA3 = withRandom([0.9], () => A.makeMove(7, 0, 3, 0));
+const resB3 = withRandom([0.1], () => B.makeMove(7, 0, 3, 0, null, resA3.outcomes));
+console.log('3. Обратный случай: boards equal =', boardKey(A) === boardKey(B),
+            '| captured у B =', resB3.captured ? resB3.captured.type : null);
 
-Реализованы (движок): `doubleGoldOnQueenCapture` (×2), `tripleGoldOnHeavyCapture`
-(×3), `doubleGoldAll`, `goldLossPerMove` (штраф за тихий ход),
-`goldPerPiecePerTurn` (перстень короля), `promoteOnCapture` (второй шанс),
-`dodgeOnLastShield` (последний рубеж). Реализованы (слой экономики):
-`itemDropChance` (железная воля — бросок в app.js, вне мультиплеера),
-`shopDiscount` (перстень купца — эффективная цена; `buyItem(item, costOverride)`
-списывает скидку, но хранит каталожную цену).
+// ── Сценарий 4: обратная совместимость — без outcomes всё работает как раньше ──
+A = makeClient();
+const r4 = withRandom([0.9], () => A.makeMove(7, 0, 3, 0));
+console.log('4. Локальная игра без outcomes: captured =', r4.captured ? r4.captured.type : null,
+            '(ожидаем pawn)');
 
-Отключены через `disabled: true` + фильтр всех пулов: `experience_orb`,
-`angelic_halo`, `soul_gem`, `chaos_gem` — требуют несуществующих подсистем.
-`getItemById` их резолвит, старые сейвы/энкаунтеры не падают.
+// ── Сценарий 5: venom через forced ──
+A = makeClient(); B = makeClient();
+for (const e of [A, B]) {
+    const att = e.board[7][0];
+    att.setItem(0, { id: 'venom_fang', modifiers: { venomChance: 0.5 } });
+}
+const r5A = withRandom([0.9, 0.1], () => A.makeMove(7, 0, 3, 0)); // dodge fail→shield? нет щита... пешка dodge 0.9 fail, убита → survivor нет, venom не применим
+console.log('5a. venom без выжившего: outcomes =', JSON.stringify(r5A.outcomes));
+// теперь с dodge: survivor есть, venom бросается
+A = makeClient(); B = makeClient();
+for (const e of [A, B]) e.board[7][0].setItem(0, { id: 'venom_fang', modifiers: { venomChance: 0.5 } });
+const r5b = withRandom([0.1, 0.2], () => A.makeMove(7, 0, 3, 0)); // dodge yes, venom yes
+const r5c = withRandom([0.9, 0.9], () => B.makeMove(7, 0, 3, 0, null, r5b.outcomes));
+const frozenA = A.board[7][0] && A.board[7][0].frozen; // survivor swap → пешка на from (7,0)
+const frozenB = B.board[7][0] && B.board[7][0].frozen;
+console.log('5b. venom forced: A frozen =', frozenA, '| B frozen =', frozenB,
+            '| equal =', frozenA === frozenB && boardKey(A) === boardKey(B));
 
-Попутно: приём золота в app.js теперь применяет отрицательные дельты
-с клэмпом в ноль (нужно для cursed_gold).
-
-## Тесты (`tests/`, запускать `node tests/<файл>.js`)
-
-- `test-sync.js` — 6 сценариев: репродукция desync, форсированные исходы,
-  обратная совместимость, чистота DTO.
-- `test-run-save.js` — 16 проверок round-trip сейва и защиты от битых данных.
-- `test-items-integrity.js` — 17 проверок: инварианты каталог ↔ энкаунтеры ↔
-  код (любой модификатор без потребителя завалит тест) + функциональные
-  тесты всех 8 новых механик.
-
-## Версии скриптов (кеш-бастинг)
-
-`app.js?v=11`, `chess-engine.js?v=4`, `run-manager.js?v=4`, `items-db.js?v=4`,
-`locales.js?v=2`, `multiplayer.js?v=2`.
-
-## Осталось по Фазе 1
-
-- i18n-sweep: ~20 захардкоженных русских строк в app.js (friend-лобби,
-  заголовки сетапа, alert'ы пресетов) и ошибки в multiplayer.js.
-- Удаление/деprecation мёртвого кода (`RunManager.onCapture` помечен).
+// ── Сценарий 6: DTO не содержит сущностей ──
+const dto = { type: 'move',
+    move: { from: { row: 7, col: 0 }, to: { row: 3, col: 0 }, promotion: null },
+    outcomes: r5b.outcomes };
+const hasFunctionsOrEntities = JSON.stringify(dto).includes('_statsCache');
+console.log('6. DTO чистый (без PieceEntity/_statsCache):', !hasFunctionsOrEntities,
+            '| размер:', JSON.stringify(dto).length, 'байт');

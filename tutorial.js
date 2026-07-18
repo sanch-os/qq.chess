@@ -1,331 +1,546 @@
-/**
- * tutorial.js — Step-by-step interactive tutorial overlay for the chess roguelike
- * Highlights elements with a spotlight and shows contextual tooltips.
- */
+/* ============================================================================
+   RunManager — qq.chess roguelike run loop (refactored)
+   ============================================================================
+   Owns the meta-game state that lives ABOVE a single chess match: gold,
+   the player's item stash, which encounter/round is current, and the
+   shop between rounds. The board/rules themselves belong to ChessEngine;
+   this class never touches move legality.
+   ========================================================================= */
 
-(function() {
-    'use strict';
+/** Max items the player's stash can hold. */
+const STASH_LIMIT = 99;
 
-    // ─── Tutorial steps ────────────────────────────────────────────────────────
-    // Each step: { key (for i18n), targetId (element to highlight), position (tooltip dir) }
-    const STEPS = [
-        // Menu steps
-        { key: 'tut.welcome',       targetId: null,                    position: 'center' },
-        { key: 'tut.roguelike',     targetId: 'btn-new-run',           position: 'bottom' },
-        { key: 'tut.mirror',        targetId: 'btn-mirror-match',      position: 'bottom' },
-        { key: 'tut.creative',      targetId: 'btn-creative',          position: 'bottom' },
-        { key: 'tut.difficulty',    targetId: 'diff-description',      position: 'top' },
-        { key: 'tut.click_start',   targetId: 'btn-new-run',           position: 'bottom' },
-
-        // Setup screen steps
-        { key: 'tut.setup_intro',   targetId: null,                    position: 'center', screen: 'setup' },
-        { key: 'tut.inventory',     targetId: 'inventory',             position: 'right', screen: 'setup' },
-        { key: 'tut.stash',        targetId: 'player-stash-setup',    position: 'right', screen: 'setup' },
-        { key: 'tut.board_place',   targetId: 'board-setup',          position: 'left',  screen: 'setup' },
-        { key: 'tut.start_btn',     targetId: 'btn-start-game',        position: 'top',   screen: 'setup' },
-
-        // Game screen steps
-        { key: 'tut.game_intro',    targetId: null,                    position: 'center', screen: 'game' },
-        { key: 'tut.game_move',     targetId: 'board-game',            position: 'left',  screen: 'game' },
-        { key: 'tut.game_history',  targetId: 'move-history',          position: 'left',  screen: 'game' },
-        { key: 'tut.game_status',   targetId: 'game-status',           position: 'bottom', screen: 'game' },
-        { key: 'tut.done',          targetId: null,                    position: 'center' },
-    ];
-
-    // ─── i18n strings ──────────────────────────────────────────────────────────
-    const TUT_TEXT = {
-        ru: {
-            'tut.welcome':      { title: '👋 Добро пожаловать!', text: 'Это обучение расскажет тебе об основах игры. Ты сможешь пропустить его в любой момент.' },
-            'tut.roguelike':    { title: '🗺️ Режим Roguelike', text: 'Начни приключение! Побеждай противников, зарабатывай золото, покупай предметы и усиливай свои фигуры.' },
-            'tut.mirror':       { title: '🪞 Зеркальный бой', text: 'Оба игрока ставят одинаковые наборы фигур. Честный поединок на тактику!' },
-            'tut.creative':     { title: '🎨 Творческий режим', text: 'Бесконечный инвентарь и предметы. Экспериментируй без ограничений — играй против бота или друга.' },
-            'tut.difficulty':   { title: '🎚️ Сложность ИИ', text: 'Выбери насколько умным будет твой противник — от случайных ходов до серьёзного расчёта на 4 хода.' },
-            'tut.click_start':  { title: '👉 Твой ход', text: 'Кликни «Start Run (Roguelike)», чтобы перейти к расстановке. Обучение продолжится там!' },
-            'tut.setup_intro':  { title: '♟️ Расстановка', text: 'Перед каждым боем ты расставляешь свои фигуры. Это твоя главная стратегия!' },
-            'tut.inventory':    { title: '⚔️ Твоя Армия', text: 'Отсюда перетаскивай фигуры на доску. В Roguelike режиме ты набираешь армию постепенно.' },
-            'tut.stash':        { title: '📦 Сундук предметов', text: 'Перетащи предмет на фигуру или кликни на фигуру, чтобы открыть её инвентарь и экипировать предметы туда.' },
-            'tut.board_place':  { title: '🏰 Доска', text: 'Расставляй фигуры только на своей половине поля (нижние 4 ряда). Хотя бы один Король обязателен!' },
-            'tut.start_btn':    { title: '⚔️ В бой!', text: 'Нажми эту кнопку, когда расстановка готова. Помни: без Короля начать нельзя.' },
-            'tut.game_intro':   { title: '🎮 Игра началась!', text: 'Теперь ты в бою. Ход белых всегда первый. Кликай на фигуру, чтобы увидеть возможные ходы.' },
-            'tut.game_move':    { title: '♟️ Как ходить', text: 'Кликни на свою фигуру — появятся точки допустимых ходов. Кликни на точку — фигура переместится. Можно также перетащить!' },
-            'tut.game_history': { title: '📜 История ходов', text: 'Как говорил классик: «Все ходы записаны!». История ведется в алгебраической нотации.' },
-            'tut.game_status':  { title: '🔔 Статус игры', text: 'Здесь отображается чей сейчас ход, шах, или победитель. Следи за этой строкой!' },
-            'tut.done':         { title: '🎉 Всё готово!', text: 'Ты знаешь основы. Теперь иди и побеждай! Обучение всегда можно запустить заново через ⚙️ Настройки.' },
-            'tut.next':         '▶ Далее',
-            'tut.prev':         '◀ Назад',
-            'tut.skip':         '✕ Пропустить',
-            'tut.finish':       '🎉 Начать игру!',
-        },
-        en: {
-            'tut.welcome':      { title: '👋 Welcome!', text: 'This tutorial will walk you through the basics. You can skip it at any time.' },
-            'tut.roguelike':    { title: '🗺️ Roguelike Mode', text: 'Start an adventure! Defeat enemies, earn gold, buy items and upgrade your pieces.' },
-            'tut.mirror':       { title: '🪞 Mirror Match', text: 'Both players place identical piece sets. A fair test of pure tactics!' },
-            'tut.creative':     { title: '🎨 Creative Mode', text: 'Unlimited inventory and items. Experiment freely — play vs bot or a friend.' },
-            'tut.difficulty':   { title: '🎚️ AI Difficulty', text: 'Choose how smart your opponent is — from random moves to deep 4-move calculation.' },
-            'tut.click_start':  { title: '👉 Your Turn', text: 'Click "Start Run (Roguelike)" to go to the setup phase. The tutorial will resume there!' },
-            'tut.setup_intro':  { title: '♟️ Setup Phase', text: 'Before each battle you place your pieces on the board. This is your core strategy!' },
-            'tut.inventory':    { title: '⚔️ Your Army', text: 'Drag pieces from here onto the board. In Roguelike mode you build your army gradually.' },
-            'tut.stash':        { title: '📦 Item Stash', text: 'Drag an item onto a piece, or click a piece to open its inventory and equip items there.' },
-            'tut.board_place':  { title: '🏰 The Board', text: 'Place pieces only on your half (bottom 4 rows). At least one King is required!' },
-            'tut.start_btn':    { title: '⚔️ To Battle!', text: 'Click this when your placement is ready. Remember: no King = no start.' },
-            'tut.game_intro':   { title: '🎮 Game On!', text: 'You\'re in battle now. White always goes first. Click a piece to see its legal moves.' },
-            'tut.game_move':    { title: '♟️ How to Move', text: 'Click your piece — dots show legal moves. Click a dot to move. You can also drag!' },
-            'tut.game_history': { title: '📜 Move History', text: 'As the classic says, "all moves are recorded!" The history uses algebraic notation.' },
-            'tut.game_status':  { title: '🔔 Game Status', text: 'Shows whose turn it is, check, or the winner. Keep an eye on this bar!' },
-            'tut.done':         { title: '🎉 You\'re ready!', text: 'Now you know the basics. Go and win! You can replay the tutorial anytime via ⚙️ Settings.' },
-            'tut.next':         '▶ Next',
-            'tut.prev':         '◀ Back',
-            'tut.skip':         '✕ Skip',
-            'tut.finish':       '🎉 Start Playing!',
-        },
-        es: {
-            'tut.welcome':      { title: '👋 ¡Bienvenido!', text: 'Este tutorial te guiará por lo básico. Puedes saltarlo en cualquier momento.' },
-            'tut.roguelike':    { title: '🗺️ Modo Roguelike', text: '¡Empieza una aventura! Derrota enemigos, gana oro, compra objetos y mejora tus piezas.' },
-            'tut.mirror':       { title: '🪞 Partida Espejo', text: 'Ambos jugadores colocan piezas idénticas. ¡Una prueba justa de táctica pura!' },
-            'tut.creative':     { title: '🎨 Modo Creativo', text: 'Inventario ilimitado y objetos sin fin. Experimenta libremente — juega vs bot o amigo.' },
-            'tut.difficulty':   { title: '🎚️ Dificultad IA', text: 'Elige cuán inteligente es tu oponente — desde movimientos aleatorios hasta cálculo a 4 jugadas.' },
-            'tut.click_start':  { title: '👉 Tu Turno', text: 'Haz clic en "Iniciar Carrera (Roguelike)" para ir a la configuración. ¡El tutorial continuará allí!' },
-            'tut.setup_intro':  { title: '♟️ Fase de Setup', text: '¡Antes de cada batalla colocas tus piezas en el tablero. ¡Esta es tu estrategia principal!' },
-            'tut.inventory':    { title: '⚔️ Tu Ejército', text: 'Arrastra piezas desde aquí al tablero. En modo Roguelike construyes tu ejército gradualmente.' },
-            'tut.stash':        { title: '📦 Alijo de Objetos', text: 'Arrastra un objeto a una pieza, o haz clic en una pieza para abrir su inventario y equipar.' },
-            'tut.board_place':  { title: '🏰 El Tablero', text: 'Coloca piezas solo en tu mitad (4 filas inferiores). ¡Al menos un Rey es obligatorio!' },
-            'tut.start_btn':    { title: '⚔️ ¡A la Batalla!', text: 'Haz clic cuando tu colocación esté lista. Recuerda: sin Rey no se puede empezar.' },
-            'tut.game_intro':   { title: '🎮 ¡Juego Iniciado!', text: 'Estás en batalla. Las blancas siempre van primero. Haz clic en una pieza para ver movimientos.' },
-            'tut.game_move':    { title: '♟️ Cómo Mover', text: 'Haz clic en tu pieza — los puntos muestran movimientos legales. ¡También puedes arrastrar!' },
-            'tut.game_history': { title: '📜 Historial', text: 'Como dice el clásico, "¡todos los movimientos están registrados!". Usa notación algebraica.' },
-            'tut.game_status':  { title: '🔔 Estado del Juego', text: 'Muestra de quién es el turno, jaque o el ganador. ¡Mantén el ojo aquí!' },
-            'tut.done':         { title: '🎉 ¡Listo!', text: 'Ya conoces lo básico. ¡Ve y gana! Puedes repetir el tutorial desde ⚙️ Ajustes.' },
-            'tut.next':         '▶ Siguiente',
-            'tut.prev':         '◀ Atrás',
-            'tut.skip':         '✕ Saltar',
-            'tut.finish':       '🎉 ¡Empezar!',
-        },
-    };
-
-    function tut(key) {
-        const lang = localStorage.getItem('chess_lang') || 'ru';
-        return (TUT_TEXT[lang] && TUT_TEXT[lang][key]) ||
-               (TUT_TEXT['ru'] && TUT_TEXT['ru'][key]) ||
-               key;
+class RunManager {
+    constructor() {
+        this.reset();
     }
 
-    // ─── State ─────────────────────────────────────────────────────────────────
-    let currentStep = 0;
-    let isActive = false;
-    let currentAppScreen = 'menu';
-    let isWaitingForScreen = false;
-    let overlay, spotlight, tooltip, tooltipTitle, tooltipText, btnPrev, btnNext, btnSkip, stepCounter;
-
-    // ─── Create DOM ────────────────────────────────────────────────────────────
-    function buildDOM() {
-        if (document.getElementById('tut-overlay')) return;
-
-        overlay = document.createElement('div');
-        overlay.id = 'tut-overlay';
-        overlay.innerHTML = `
-            <div id="tut-spotlight"></div>
-            <div id="tut-tooltip" class="tut-tooltip">
-                <h3 id="tut-title"></h3>
-                <p id="tut-text"></p>
-                <div class="tut-footer">
-                    <span id="tut-counter" class="tut-counter"></span>
-                    <div class="tut-btns">
-                        <button id="tut-skip" class="tut-btn tut-btn-skip"></button>
-                        <button id="tut-prev" class="tut-btn tut-btn-secondary"></button>
-                        <button id="tut-next" class="tut-btn tut-btn-primary"></button>
-                    </div>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-
-        spotlight    = document.getElementById('tut-spotlight');
-        tooltip      = document.getElementById('tut-tooltip');
-        tooltipTitle = document.getElementById('tut-title');
-        tooltipText  = document.getElementById('tut-text');
-        btnPrev      = document.getElementById('tut-prev');
-        btnNext      = document.getElementById('tut-next');
-        btnSkip      = document.getElementById('tut-skip');
-        stepCounter  = document.getElementById('tut-counter');
-
-        btnNext.addEventListener('click', nextStep);
-        btnPrev.addEventListener('click', prevStep);
-        btnSkip.addEventListener('click', finish);
-
-        // Allow Esc to skip
-        document.addEventListener('keydown', function onEsc(e) {
-            if (e.key === 'Escape' && isActive) finish();
-        });
+    /** Resets all run state to a fresh, inactive run. */
+    reset() {
+        this.active = false;
+        this.gold = 80;
+        this.currentRound = 0;
+        this.encounters = getEncounters();
+        this.totalRounds = this.encounters.length;
+        /** @type {Array<Object>} Items in the player's stash (not equipped). */
+        this.playerItems = [];
+        /** @type {Object<string,number>} Extra pieces recruited from surviving enemies. */
+        this.bonusPieces = {};
+        /** @type {Array<{round:number, result:'win'|'lose'}>} */
+        this.roundResults = [];
+        /** @type {'idle'|'starting_items'|'setup'|'playing'|'shop'|'victory'|'defeat'} */
+        this.state = 'idle';
+        this.capturesThisRound = 0;
+        this.startingItemsGiven = false;
+        /** Memoized Endless-mode encounter — see getCurrentEncounter(). */
+        this._endlessCache = null; // { round, encounter }
     }
 
-    // ─── Spotlight positioning ──────────────────────────────────────────────────
-    function positionSpotlight(el) {
-        if (!el) {
-            spotlight.style.cssText = 'display:none;';
-            return;
+    /* ======================================================================
+       Run lifecycle
+       ==================================================================== */
+
+    /** Starts a brand-new run: fresh state, sequence, and starting items. */
+    startRun() {
+        this.reset();
+        this.active = true;
+        this.state = 'starting_items';
+
+        this._generateRunSequence();
+
+        // Give player 12 random starting items.
+        this.playerItems = getRandomItems(12);
+        this.startingItemsGiven = true;
+    }
+
+    /** Builds this run's encounter sequence from encounters.js. */
+    _generateRunSequence() {
+        const allEncounters = getEncounters();
+        this.encounters = allEncounters.map(e => ({ ...e }));
+        this.totalRounds = this.encounters.length;
+        this._endlessCache = null;
+    }
+
+    /* ======================================================================
+       Round management
+       ==================================================================== */
+
+    /**
+     * Returns the encounter for the current round.
+     *
+     * Endless Mode (currentRound >= encounters.length): loops the base
+     * sequence with scaled difficulty/reward and a random extra-items
+     * bonus for the enemy.
+     *
+     * FIX: the random extra-items bonus used to be regenerated via
+     * Math.random() on EVERY call — and this getter is called multiple
+     * times per round (startRound() → _equipEnemyItems(), then again from
+     * app.js for UI text), so two calls in the same round could return
+     * different `enemyItems`. Nothing currently reads `enemyItems` after
+     * the first (equipping) call, so this wasn't causing a visible bug —
+     * but a getter whose result silently changes between calls with no
+     * state change in between is a trap for the next caller. The result
+     * is now memoized per `currentRound`, so repeated calls in the same
+     * round are stable, and only advancing to a new round regenerates it.
+     * @returns {Object} The encounter to play (or display) right now.
+     */
+    getCurrentEncounter() {
+        if (this.currentRound < this.encounters.length) {
+            return this.encounters[this.currentRound];
         }
 
-        const rect = el.getBoundingClientRect();
-        const pad = 10;
-        spotlight.style.cssText = `
-            display: block;
-            top: ${rect.top - pad}px;
-            left: ${rect.left - pad}px;
-            width: ${rect.width + pad * 2}px;
-            height: ${rect.height + pad * 2}px;
-            border-radius: 12px;
-        `;
-    }
-
-    // ─── Tooltip positioning ────────────────────────────────────────────────────
-    function positionTooltip(el, position) {
-        tooltip.className = 'tut-tooltip';
-        tooltip.classList.add('tut-pos-' + (position || 'center'));
-
-        const W = Math.min(320, window.innerWidth - 24);
-        tooltip.style.cssText = `position: fixed; width: ${W}px;`;
-
-        if (!el || position === 'center') {
-            const H = tooltip.offsetHeight || 180;
-            tooltip.style.top = Math.max(12, (window.innerHeight / 2 - H / 2)) + 'px';
-            tooltip.style.left = (window.innerWidth / 2 - W / 2) + 'px';
-            return;
+        // Endless Mode: return the memoized encounter for this round if we
+        // already generated one (keeps repeated calls idempotent).
+        if (this._endlessCache && this._endlessCache.round === this.currentRound) {
+            return this._endlessCache.encounter;
         }
 
-        const rect = el.getBoundingClientRect();
-        const gap = 18;
+        const loop = Math.floor(this.currentRound / this.encounters.length);
+        const baseIndex = this.currentRound % this.encounters.length;
+        const baseEncounter = this.encounters[baseIndex];
 
-        let top, left;
-        switch (position) {
-            case 'bottom':
-                top  = rect.bottom + gap;
-                left = rect.left + rect.width / 2 - W / 2;
-                break;
-            case 'top':
-                top  = rect.top - gap - 180; // approx tooltip height
-                left = rect.left + rect.width / 2 - W / 2;
-                break;
-            case 'right':
-                top  = rect.top + rect.height / 2 - 90;
-                left = rect.right + gap;
-                break;
-            case 'left':
-                top  = rect.top + rect.height / 2 - 90;
-                left = rect.left - W - gap;
-                break;
+        // Generate random extra items for the enemy, scaled by loop count.
+        const extraItems = [];
+        const itemIds = Object.keys(ITEMS_DB);
+        const pieceTypes = ['pawn', 'knight', 'bishop', 'rook', 'queen'];
+        for (let i = 0; i < loop * 2; i++) {
+            const randomItemId = itemIds[Math.floor(Math.random() * itemIds.length)];
+            const randomPiece = pieceTypes[Math.floor(Math.random() * pieceTypes.length)];
+            extraItems.push({ pieceType: randomPiece, pieceIndex: Math.floor(Math.random() * 2), itemId: randomItemId });
         }
 
-        // Clamp to viewport
-        left = Math.max(12, Math.min(left, window.innerWidth - W - 12));
-        top  = Math.max(12, Math.min(top, window.innerHeight - 200));
+        const encounter = {
+            ...baseEncounter,
+            name: `${baseEncounter.name} (Loop ${loop + 1})`,
+            aiDepth: Math.min(4, baseEncounter.aiDepth + Math.floor(loop / 2)),
+            goldReward: baseEncounter.goldReward + (loop * 30),
+            enemyItems: [...(baseEncounter.enemyItems || []), ...extraItems],
+        };
 
-        tooltip.style.cssText = `
-            position: fixed;
-            top: ${top}px;
-            left: ${left}px;
-            width: ${W}px;
-            transform: none;
-        `;
+        this._endlessCache = { round: this.currentRound, encounter };
+        return encounter;
     }
 
-    // ─── Render step ───────────────────────────────────────────────────────────
-    function renderStep(idx) {
-        const step = STEPS[idx];
-        if (!step) { finish(); return; }
+    /**
+     * Begins the current round: sets state to 'playing' and equips the
+     * enemy's item loadout onto the board.
+     * @param {ChessEngine} engine
+     * @returns {Object|null} The encounter that was started, or null if
+     *          there is none (should not normally happen).
+     */
+    startRound(engine) {
+        const encounter = this.getCurrentEncounter();
+        if (!encounter) return null;
 
-        if (step.screen && step.screen !== currentAppScreen) {
-            isWaitingForScreen = true;
-            overlay.classList.remove('active');
-            return;
-        }
+        this.state = 'playing';
+        this.capturesThisRound = 0;
 
-        isWaitingForScreen = false;
-        overlay.classList.add('active');
+        this._equipEnemyItems(engine, encounter);
 
-        const strings = tut(step.key);
-        const title   = strings.title || '';
-        const text    = strings.text  || '';
-        const lang    = localStorage.getItem('chess_lang') || 'ru';
-        const tt      = TUT_TEXT[lang] || TUT_TEXT['ru'];
-        const isLast  = idx === STEPS.length - 1;
-
-        tooltipTitle.textContent = title;
-        tooltipText.textContent  = text;
-        btnSkip.textContent = tt['tut.skip'];
-        btnPrev.textContent = tt['tut.prev'];
-        btnNext.textContent = isLast ? tt['tut.finish'] : tt['tut.next'];
-        btnPrev.style.display = idx === 0 ? 'none' : '';
-        stepCounter.textContent = `${idx + 1} / ${STEPS.length}`;
-
-        const targetEl = step.targetId ? document.getElementById(step.targetId) : null;
-        positionSpotlight(targetEl);
-        positionTooltip(targetEl, step.position);
-
-        // Pulse animation on tooltip
-        tooltip.classList.remove('tut-animate-in');
-        void tooltip.offsetWidth; // reflow
-        tooltip.classList.add('tut-animate-in');
-
-        // Scroll target into view
-        if (targetEl) {
-            targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
+        return encounter;
     }
 
-    // ─── Navigation ────────────────────────────────────────────────────────────
-    function nextStep() {
-        currentStep++;
-        if (currentStep >= STEPS.length) { finish(); return; }
-        renderStep(currentStep);
-    }
+    /**
+     * Equips each `encounter.enemyItems` entry onto the matching black
+     * piece on the board (by type + positional index among same-type
+     * pieces), and tags boss pieces.
+     * @param {ChessEngine} engine
+     * @param {Object} encounter
+     */
+    _equipEnemyItems(engine, encounter) {
+        if (!encounter.enemyItems || encounter.enemyItems.length === 0) return;
 
-    function prevStep() {
-        if (currentStep > 0) {
-            currentStep--;
-            renderStep(currentStep);
-        }
-    }
+        for (const itemDef of encounter.enemyItems) {
+            const item = getItemById(itemDef.itemId);
+            if (!item) continue;
 
-    // ─── Public API ────────────────────────────────────────────────────────────
-    function start() {
-        buildDOM();
-        currentStep = 0;
-        isActive = true;
-        overlay.classList.add('active');
-        renderStep(0);
-    }
-
-    function finish() {
-        isActive = false;
-        isWaitingForScreen = false;
-        if (overlay) overlay.classList.remove('active');
-        localStorage.setItem('chess_tut_done', '1');
-    }
-
-    function reset() {
-        localStorage.removeItem('chess_tut_done');
-    }
-
-    function onScreenChange(name) {
-        currentAppScreen = name;
-        if (isActive && isWaitingForScreen && STEPS[currentStep]) {
-            const expected = STEPS[currentStep].screen;
-            if (!expected || expected === name) {
-                renderStep(currentStep);
+            // Find the matching piece on the board.
+            let matchCount = 0;
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const piece = engine.board[r][c];
+                    if (piece && piece.color === 'black' && piece.type === itemDef.pieceType) {
+                        if (matchCount === (itemDef.pieceIndex || 0)) {
+                            const slot = piece.getEmptySlot();
+                            if (slot !== -1) {
+                                // FIX: getItemById() returns the raw ITEMS_DB
+                                // template (by design — it does not clone).
+                                // `{ ...item }` alone only copies the top
+                                // level, leaving `modifiers` aliased to the
+                                // PERMANENT, session-wide catalog entry — any
+                                // future in-place mutation of an equipped
+                                // item's modifiers would corrupt that item
+                                // for every piece, every game, for the rest
+                                // of the session. Deep-cloning `modifiers`
+                                // here matches the same fix already applied
+                                // to every other equip path in this codebase.
+                                piece.setItem(slot, { ...item, modifiers: { ...(item.modifiers || {}) } });
+                            }
+                            if (itemDef.isBossPiece) {
+                                piece.isBoss = true;
+                                piece.bossName = encounter.bossName;
+                                piece.bossDescription = encounter.bossDescription;
+                            }
+                            matchCount = -999; // done
+                            break;
+                        }
+                        matchCount++;
+                    }
+                }
+                if (matchCount === -999) break;
             }
         }
     }
 
-    // Expose globally
-    window.Tutorial = { start, finish, reset, onScreenChange };
+    /* ======================================================================
+       Capture tracking
+       ==================================================================== */
 
-    // ─── Auto-start on first visit ─────────────────────────────────────────────
-    // Wait for app to finish init, then check
-    window.addEventListener('load', () => {
-        setTimeout(() => {
-            if (!localStorage.getItem('chess_tut_done')) {
-                start();
+    /**
+     * Per-capture hook: gold-per-capture and enemy-item looting.
+     *
+     * NOT CURRENTLY CALLED ANYWHERE in this codebase (verified — grepping
+     * every file finds zero call sites). The actual, working capture-time
+     * economy runs through `engine.goldEarned` (populated inside
+     * ChessEngine.executeMoveAndUpdate, which handles the FULL set of
+     * gold-on-capture item fields — goldOnQueenCapture, goldOnRookCapture,
+     * etc., not just goldPerCapture) plus a direct `runManager.lootItem()`
+     * call in app.js's executePlayerMove. This method only reproduces the
+     * `goldPerCapture` slice of that, incompletely.
+     *
+     * Left in place for API compatibility, but do NOT wire this up as an
+     * additional capture hook without first removing the equivalent logic
+     * from app.js/chess-engine.js — calling both would double-count gold
+     * and double-loot items from the same capture.
+     * @param {PieceEntity} capturer
+     * @param {PieceEntity} victim
+     */
+    onCapture(capturer, victim) {
+        this.capturesThisRound++;
+
+        if (capturer && capturer.color === 'white') {
+            const stats = capturer.getStats();
+            if (stats.goldPerCapture > 0) {
+                this.gold += stats.goldPerCapture;
             }
-        }, 600);
-    });
-})();
+
+            if (victim && victim.color === 'black' && victim instanceof PieceEntity) {
+                victim.getItems().forEach(item => {
+                    if (item && this.playerItems.length < STASH_LIMIT) {
+                        this.playerItems.push({ ...item });
+                    }
+                });
+            }
+        }
+    }
+
+    /* ======================================================================
+       Round end
+       ==================================================================== */
+
+    /** Awards the round's gold reward, records the win, and moves to the shop. */
+    onRoundWin() {
+        const encounter = this.getCurrentEncounter();
+        if (!encounter) return;
+
+        this.gold += encounter.goldReward;
+        // goldOnWin (per-piece item bonus) is computed separately by
+        // app.js via computeGoldOnWin(), which has access to the live board.
+
+        this.roundResults.push({ round: this.currentRound, result: 'win' });
+        this.currentRound++;
+        this._endlessCache = null; // new round -> Endless Mode must regenerate
+
+        // Endless mode: always go to shop after a win, never a hard "victory".
+        this.state = 'shop';
+    }
+
+    /**
+     * Collects every item off every white piece on the board back into the
+     * stash (called after a round win, before the shop). Directly zeroes
+     * `items`/`shield` rather than looping `removeItem()` per slot — safe
+     * here because this only ever runs between rounds, before any combat
+     * on the fresh board has happened, so there is no accumulated combat
+     * shield to preserve (see PieceEntity's shield-delta model).
+     * @param {ChessEngine} engine
+     */
+    collectItemsFromBoard(engine) {
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const piece = engine.board[r][c];
+                if (piece && piece.color === 'white' && piece instanceof PieceEntity) {
+                    piece.getItems().forEach(item => {
+                        if (item && this.playerItems.length < STASH_LIMIT) {
+                            this.playerItems.push({ ...item });
+                        }
+                    });
+                    piece.items = [null, null, null];
+                    piece.shield = 0;
+                }
+            }
+        }
+    }
+
+    /**
+     * Loots a single item (e.g. from a piece captured this move) into the stash.
+     * @param {Object} item
+     * @returns {boolean} True if it fit (stash wasn't full).
+     */
+    lootItem(item) {
+        if (item && this.playerItems.length < STASH_LIMIT) {
+            this.playerItems.push({ ...item });
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Recruits a surviving enemy piece TYPE as a bonus piece for future
+     * setups (kings are never recruitable).
+     * @param {string} type
+     */
+    recruitPiece(type) {
+        if (type === 'king') return;
+        this.bonusPieces[type] = (this.bonusPieces[type] || 0) + 1;
+    }
+
+    /** Records a round loss and moves to the defeat state. */
+    onRoundLose() {
+        this.roundResults.push({ round: this.currentRound, result: 'lose' });
+        this.state = 'defeat';
+    }
+
+    /**
+     * Sums the `goldOnWin` item stat across every white piece on the board.
+     * @param {ChessEngine} engine
+     * @returns {number}
+     */
+    computeGoldOnWin(engine) {
+        let bonus = 0;
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const piece = engine.board[r][c];
+                if (piece && piece.color === 'white' && piece.getStats) {
+                    bonus += piece.getStats().goldOnWin || 0;
+                }
+            }
+        }
+        return bonus;
+    }
+
+    /* ======================================================================
+       Shop
+       ==================================================================== */
+
+    /**
+     * @param {number} [count=4]
+     * @returns {Array<Object>} Shop offers (delegates to items-db.js's getShopItems).
+     */
+    getShopItems(count = 4) {
+        return getShopItems(count, this.gold);
+    }
+
+    /**
+     * Buys an item into the stash if gold and space allow.
+     * @param {Object} item
+     * @param {number} [costOverride] - Effective price to charge (e.g. a
+     *        merchants_ring shop discount). The item itself is stored with
+     *        its ORIGINAL catalog cost, so sell value / balance data stay
+     *        anchored to the catalog, not to the discounted purchase.
+     * @returns {boolean|'full'}
+     */
+    buyItem(item, costOverride) {
+        const price = (typeof costOverride === 'number') ? costOverride : item.cost;
+        if (this.gold < price) return false;
+        if (this.playerItems.length >= STASH_LIMIT) return 'full';
+        this.gold -= price;
+        this.playerItems.push({ ...item, modifiers: { ...(item.modifiers || {}) } });
+        return true;
+    }
+
+    /**
+     * Sells a stashed item for half its cost (rounded down).
+     * @param {number} index
+     * @returns {boolean} True on success.
+     */
+    sellItem(index) {
+        if (index < 0 || index >= this.playerItems.length) return false;
+        const item = this.playerItems[index];
+        this.gold += Math.floor(item.cost * 0.5);
+        this.playerItems.splice(index, 1);
+        return true;
+    }
+
+    /* ======================================================================
+       Item equipment
+       ==================================================================== */
+
+    /**
+     * Equips a stashed item onto a piece.
+     * @param {number} itemIndex - Index into this.playerItems.
+     * @param {PieceEntity} piece
+     * @param {boolean} [keepInStash=false] - If true, the item stays in the
+     *        stash as well as being equipped (used for preview/creative flows).
+     * @returns {boolean} True on success.
+     */
+    equipItemToPiece(itemIndex, piece, keepInStash = false) {
+        if (itemIndex < 0 || itemIndex >= this.playerItems.length) return false;
+        const item = this.playerItems[itemIndex];
+
+        if (!item.allowedPieces.includes('all') && !item.allowedPieces.includes(piece.type)) {
+            return false;
+        }
+
+        const slot = piece.getEmptySlot();
+        if (slot === -1) return false;
+
+        // FIX: deep-clone `modifiers` — with keepInStash=true the original
+        // stays in this.playerItems, so a shallow `{ ...item }` would leave
+        // the equipped copy and the still-stashed copy sharing the same
+        // modifiers object. Not currently exercised (every call site in
+        // this codebase passes keepInStash=false), but a real trap for any
+        // future caller that does pass true.
+        piece.setItem(slot, { ...item, modifiers: { ...(item.modifiers || {}) } });
+        if (!keepInStash) {
+            this.playerItems.splice(itemIndex, 1);
+        }
+        return true;
+    }
+
+    /**
+     * Unequips an item from a piece back into the stash.
+     * @param {PieceEntity} piece
+     * @param {number} slot
+     * @param {boolean} [destroyOnUnequip=false] - If true, discard the item
+     *        entirely instead of returning it to the stash.
+     * @returns {boolean|'full'} true on success, 'full' if the stash is full
+     *          (the item is re-equipped in that case, so nothing is lost).
+     */
+    unequipItemFromPiece(piece, slot, destroyOnUnequip = false) {
+        const item = piece.removeItem(slot);
+        if (!item) return false;
+
+        if (destroyOnUnequip) {
+            return true;
+        }
+
+        if (this.playerItems.length >= STASH_LIMIT) {
+            // Stash full — re-equip the SAME item object we just removed.
+            // PieceEntity's shield-delta model (see piece-entity.js) makes
+            // this remove-then-immediately-reapply a clean no-op on shield.
+            piece.setItem(slot, item);
+            return 'full';
+        }
+        this.playerItems.push(item);
+        return true;
+    }
+
+    /** Advances from the shop back to setting up the next round. */
+    finishShopping() {
+        this.state = 'setup';
+    }
+
+    /* ======================================================================
+       State queries
+       ==================================================================== */
+
+    isRunActive() { return this.active; }
+    isPlaying() { return this.state === 'playing'; }
+    isShop() { return this.state === 'shop'; }
+    isVictory() { return this.state === 'victory'; }
+    isDefeat() { return this.state === 'defeat'; }
+
+    /**
+     * @returns {{current:number, total:number, encounter:Object}} Human-
+     *          facing round info (1-indexed current round).
+     */
+    getRoundInfo() {
+        return {
+            current: this.currentRound + 1,
+            total: this.totalRounds,
+            encounter: this.getCurrentEncounter(),
+        };
+    }
+
+    /* ======================================================================
+       Persistence (run save / restore)
+       ======================================================================
+       Between-round checkpointing. Only meta-state is saved: after every
+       round win collectItemsFromBoard() pulls all equipment back into the
+       stash, so at shop/setup time the ENTIRE run is exactly {gold, round,
+       stash, recruits, results} — no board state needed.
+
+       Stash items are stored as catalog IDs only and re-hydrated from
+       ITEMS_DB on restore. This keeps saves tiny, immune to the "stale
+       modifiers object" class of bugs, and self-healing across balance
+       patches: unknown/removed IDs are silently dropped instead of
+       resurrecting outdated item definitions. */
+
+    /** Save-format version. Bump on breaking changes to the payload. */
+    static get SAVE_VERSION() { return 1; }
+
+    /**
+     * @returns {Object} Plain-data snapshot of the run, safe for
+     *          JSON.stringify/localStorage (no entities, no functions).
+     */
+    serialize() {
+        return {
+            v: RunManager.SAVE_VERSION,
+            savedAt: Date.now(),
+            active: this.active,
+            gold: this.gold,
+            currentRound: this.currentRound,
+            capturesThisRound: this.capturesThisRound,
+            startingItemsGiven: this.startingItemsGiven,
+            bonusPieces: { ...this.bonusPieces },
+            roundResults: this.roundResults.map(r => ({ ...r })),
+            playerItems: this.playerItems.map(it => it.id),
+        };
+    }
+
+    /**
+     * Restores a run from a serialize() payload. Defensive by design:
+     * validates shape/version, whitelists every field, and re-hydrates
+     * stash items from the live catalog.
+     * @param {Object} data - Parsed save payload.
+     * @returns {boolean} True if the run was restored; false if the
+     *          payload is missing/invalid (state is left reset).
+     */
+    restore(data) {
+        if (!data || typeof data !== 'object') return false;
+        if (data.v !== RunManager.SAVE_VERSION) return false;
+        if (!data.active) return false;
+        if (!Number.isInteger(data.currentRound) || data.currentRound < 0) return false;
+
+        this.reset(); // fresh encounters sequence + clean defaults
+
+        this.active = true;
+        this.gold = Number.isFinite(data.gold) ? Math.max(0, Math.floor(data.gold)) : 0;
+        this.currentRound = data.currentRound;
+        this.capturesThisRound = Number.isInteger(data.capturesThisRound) ? data.capturesThisRound : 0;
+        this.startingItemsGiven = !!data.startingItemsGiven;
+        this.state = 'setup'; // resume screen is decided by app.js, not the save
+
+        if (data.bonusPieces && typeof data.bonusPieces === 'object') {
+            for (const [type, n] of Object.entries(data.bonusPieces)) {
+                if (type !== 'king' && Number.isInteger(n) && n > 0) this.bonusPieces[type] = n;
+            }
+        }
+        if (Array.isArray(data.roundResults)) {
+            this.roundResults = data.roundResults
+                .filter(r => r && Number.isInteger(r.round) && (r.result === 'win' || r.result === 'lose'))
+                .map(r => ({ round: r.round, result: r.result }));
+        }
+        if (Array.isArray(data.playerItems)) {
+            for (const id of data.playerItems) {
+                if (this.playerItems.length >= STASH_LIMIT) break;
+                const item = (typeof id === 'string') ? getItemById(id) : null;
+                if (item) {
+                    // Same deep-clone-of-modifiers rule as every equip path.
+                    this.playerItems.push({ ...item, modifiers: { ...(item.modifiers || {}) } });
+                }
+            }
+        }
+        return true;
+    }
+}

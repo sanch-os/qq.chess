@@ -1,546 +1,415 @@
 /* ============================================================================
-   RunManager — qq.chess roguelike run loop (refactored)
+   PieceEntity — qq.chess piece with item slots (refactored)
    ============================================================================
-   Owns the meta-game state that lives ABOVE a single chess match: gold,
-   the player's item stash, which encounter/round is current, and the
-   shop between rounds. The board/rules themselves belong to ChessEngine;
-   this class never touches move legality.
+   A chess piece plus up to MAX_ITEM_SLOTS equipped items. Items contribute
+   `modifiers` (numeric stats that scale with stacked copies, booleans that
+   simply flip on) which getStats() aggregates into one flat stats object
+   consumed by ChessEngine's move generators and attack detection, and by
+   ChessAI's evaluation via getItemValue().
+
+   SHIELD MODEL (read this before touching setItem/removeItem):
+   `shield` is the piece's CURRENT absorbable-hit charge count. It is NOT
+   simply "whatever the equipped items say" — it can also grow at runtime
+   from combat effects (lifesteal, shieldOnHeavyCapture, written directly by
+   ChessEngine after a capture). Equipping/unequipping an item must only
+   apply the DELTA the item contributes, never overwrite the whole value —
+   otherwise combat-earned charges get wiped out (or, worse, a spent shield
+   gets silently refilled by an unrelated inventory action). See
+   _recomputeShield() for the exact mechanism.
    ========================================================================= */
 
-/** Max items the player's stash can hold. */
-const STASH_LIMIT = 99;
+/** Number of equippable item slots per piece. */
+const MAX_ITEM_SLOTS = 3;
+/** Upper bound for any probability-like stat (dodge, venom, ...). Leaves a
+ *  non-zero chance of the "opposite" outcome so these abilities are strong,
+ *  not literally unbeatable, even when fully stacked. */
+const MAX_PROBABILITY = 0.95;
 
-class RunManager {
-    constructor() {
-        this.reset();
+class PieceEntity {
+    /**
+     * @param {string} type - 'king'|'queen'|'rook'|'bishop'|'knight'|'pawn'
+     * @param {'white'|'black'} color
+     * @param {number} [id] - Stable identity across promotion/clone; a new
+     *        id is minted from the shared counter if omitted.
+     */
+    constructor(type, color, id) {
+        this.id = id !== undefined ? id : PieceEntity._nextId++;
+        this.type = type;
+        /** @type {string} Original type at creation; never changes across promotion. */
+        this.baseType = type;
+        this.color = color;
+        /** @type {Array<Object|null>} Equipped items, one per slot. */
+        this.items = new Array(MAX_ITEM_SLOTS).fill(null);
+        /** @type {number} CURRENT shield charges — see module doc above. */
+        this.shield = 0;
+        /** @type {number} Shield charges attributable to equipped items,
+         *  tracked separately so setItem/removeItem can apply just the
+         *  delta instead of overwriting combat-earned charges. */
+        this._itemShieldMax = 0;
+        this.moveCount = 0;
+        this.captureCount = 0;
+        /** @type {number} Turns remaining frozen (venom effect); 0 = active. */
+        this.frozen = 0;
+        this.alive = true; // Serialized by app.js; not currently read by game logic.
+
+        /** @type {Object|null} Cached getStats() result; see _invalidateStats(). */
+        this._statsCache = null;
+        this._statsDirty = true;
     }
 
-    /** Resets all run state to a fresh, inactive run. */
-    reset() {
-        this.active = false;
-        this.gold = 80;
-        this.currentRound = 0;
-        this.encounters = getEncounters();
-        this.totalRounds = this.encounters.length;
-        /** @type {Array<Object>} Items in the player's stash (not equipped). */
-        this.playerItems = [];
-        /** @type {Object<string,number>} Extra pieces recruited from surviving enemies. */
-        this.bonusPieces = {};
-        /** @type {Array<{round:number, result:'win'|'lose'}>} */
-        this.roundResults = [];
-        /** @type {'idle'|'starting_items'|'setup'|'playing'|'shop'|'victory'|'defeat'} */
-        this.state = 'idle';
-        this.capturesThisRound = 0;
-        this.startingItemsGiven = false;
-        /** Memoized Endless-mode encounter — see getCurrentEncounter(). */
-        this._endlessCache = null; // { round, encounter }
+    /**
+     * Copies this piece for search/legality clones. Items are shared by
+     * reference (they are treated as immutable data templates once
+     * equipped — nothing in this codebase mutates an item object in
+     * place), so the stats cache is safely carried over: same items ⇒
+     * same aggregated stats, no need to recompute on the clone's first
+     * getStats() call.
+     * @returns {PieceEntity}
+     */
+    clone() {
+        const p = new PieceEntity(this.type, this.color, this.id);
+        p.baseType = this.baseType;
+        p.items = this.items.slice();
+        p.shield = this.shield;
+        p._itemShieldMax = this._itemShieldMax;
+        p.moveCount = this.moveCount;
+        p.captureCount = this.captureCount;
+        p.frozen = this.frozen;
+        p.alive = this.alive;
+        p._statsCache = this._statsCache; // safe: identical items ⇒ identical stats
+        p._statsDirty = this._statsDirty;
+        return p;
     }
 
     /* ======================================================================
-       Run lifecycle
+       Item management
        ==================================================================== */
 
-    /** Starts a brand-new run: fresh state, sequence, and starting items. */
-    startRun() {
-        this.reset();
-        this.active = true;
-        this.state = 'starting_items';
+    /** @param {number} slot @returns {Object|null} */
+    getItem(slot) { return this.items[slot]; }
 
-        this._generateRunSequence();
-
-        // Give player 12 random starting items.
-        this.playerItems = getRandomItems(12);
-        this.startingItemsGiven = true;
+    /**
+     * Equips an item into a slot (overwriting whatever was there) and
+     * updates derived state (stats cache, shield delta).
+     * @param {number} slot
+     * @param {Object} item
+     */
+    setItem(slot, item) {
+        this.items[slot] = item;
+        this._invalidateStats();
+        this._recomputeShield();
     }
 
-    /** Builds this run's encounter sequence from encounters.js. */
-    _generateRunSequence() {
-        const allEncounters = getEncounters();
-        this.encounters = allEncounters.map(e => ({ ...e }));
-        this.totalRounds = this.encounters.length;
-        this._endlessCache = null;
+    /**
+     * Clears a slot and returns whatever was equipped there.
+     * @param {number} slot
+     * @returns {Object|null}
+     */
+    removeItem(slot) {
+        const item = this.items[slot];
+        this.items[slot] = null;
+        this._invalidateStats();
+        this._recomputeShield();
+        return item;
+    }
+
+    /** @returns {Object[]} Equipped items, empty slots omitted. */
+    getItems() { return this.items.filter(Boolean); }
+
+    /** @returns {number} Index of the first empty slot, or -1 if full. */
+    getEmptySlot() { return this.items.indexOf(null); }
+
+    /** @param {string} itemId @returns {boolean} */
+    hasItemId(itemId) { return this.items.some(i => i && i.id === itemId); }
+
+    /** @param {string} tag @returns {boolean} True if any equipped item carries `tag`. */
+    hasItemTag(tag) {
+        return this.items.some(i => i && i.tags && i.tags.includes(tag));
+    }
+
+    /** Marks the aggregated-stats cache stale; next getStats() recomputes it. */
+    _invalidateStats() {
+        this._statsDirty = true;
+    }
+
+    /**
+     * Applies exactly the shield DELTA an inventory change contributes.
+     *
+     * Why a delta and not a plain overwrite: `shield` also accumulates at
+     * runtime from combat (lifesteal, shieldOnHeavyCapture — both add
+     * directly to `piece.shield` in ChessEngine after a capture). If this
+     * method simply set `this.shield = stats.shield`, EVERY unrelated
+     * inventory action would clobber that combat-earned bonus back down to
+     * the items' base value — and, symmetrically, re-equipping after a
+     * shield charge was already spent in battle would silently refill it
+     * for free. Tracking `_itemShieldMax` (the portion of `shield`
+     * attributable to items) lets us add/remove only what actually changed.
+     */
+    _recomputeShield() {
+        const oldMax = this._itemShieldMax || 0;
+        const stats = this.getStats(); // recomputed via the now-dirty cache
+        const newMax = stats.shield || 0;
+        this.shield = Math.max(0, this.shield + (newMax - oldMax));
+        this._itemShieldMax = newMax;
     }
 
     /* ======================================================================
-       Round management
+       Computed stats from equipped items
        ==================================================================== */
 
     /**
-     * Returns the encounter for the current round.
+     * Aggregates every equipped item's modifiers into one flat stats
+     * object consumed by ChessEngine's move generators / attack detection.
      *
-     * Endless Mode (currentRound >= encounters.length): loops the base
-     * sequence with scaled difficulty/reward and a random extra-items
-     * bonus for the enemy.
+     * Aggregation rules:
+     *  - Numeric modifiers SCALE with the number of identical copies
+     *    equipped (up to MAX_ITEM_SLOTS, since duplicates are legal).
+     *  - Boolean modifiers simply turn a flag on if at least one copy is
+     *    equipped (no stacking concept for an on/off ability).
+     *  - `extraDirections` / `extraKnightOffsets` live on the item itself
+     *    (not inside `modifiers`) and are concatenated once per copy.
+     *  - `synergy` grants BONUS modifiers once a specific stacked count is
+     *    reached; every threshold at or below the current count applies
+     *    (so an item could define both a 2-copy and a 3-copy bonus, and a
+     *    3-stack gets both) — see the Horseshoe item (3× ⇒ moveAnywhere).
      *
-     * FIX: the random extra-items bonus used to be regenerated via
-     * Math.random() on EVERY call — and this getter is called multiple
-     * times per round (startRound() → _equipEnemyItems(), then again from
-     * app.js for UI text), so two calls in the same round could return
-     * different `enemyItems`. Nothing currently reads `enemyItems` after
-     * the first (equipping) call, so this wasn't causing a visible bug —
-     * but a getter whose result silently changes between calls with no
-     * state change in between is a trap for the next caller. The result
-     * is now memoized per `currentRound`, so repeated calls in the same
-     * round are stable, and only advancing to a new round regenerates it.
-     * @returns {Object} The encounter to play (or display) right now.
+     * Result is CACHED: recomputation only happens after setItem/
+     * removeItem mark the cache dirty. Callers get a defensive copy (top
+     * level + the two mutable array fields) so nothing they do to the
+     * returned object can corrupt the cache.
+     *
+     * @returns {Object} Flat stats object — see field comments below.
      */
-    getCurrentEncounter() {
-        if (this.currentRound < this.encounters.length) {
-            return this.encounters[this.currentRound];
+    getStats() {
+        if (!this._statsDirty && this._statsCache) {
+            return this._cloneStats(this._statsCache);
         }
 
-        // Endless Mode: return the memoized encounter for this round if we
-        // already generated one (keeps repeated calls idempotent).
-        if (this._endlessCache && this._endlessCache.round === this.currentRound) {
-            return this._endlessCache.encounter;
-        }
-
-        const loop = Math.floor(this.currentRound / this.encounters.length);
-        const baseIndex = this.currentRound % this.encounters.length;
-        const baseEncounter = this.encounters[baseIndex];
-
-        // Generate random extra items for the enemy, scaled by loop count.
-        const extraItems = [];
-        const itemIds = Object.keys(ITEMS_DB);
-        const pieceTypes = ['pawn', 'knight', 'bishop', 'rook', 'queen'];
-        for (let i = 0; i < loop * 2; i++) {
-            const randomItemId = itemIds[Math.floor(Math.random() * itemIds.length)];
-            const randomPiece = pieceTypes[Math.floor(Math.random() * pieceTypes.length)];
-            extraItems.push({ pieceType: randomPiece, pieceIndex: Math.floor(Math.random() * 2), itemId: randomItemId });
-        }
-
-        const encounter = {
-            ...baseEncounter,
-            name: `${baseEncounter.name} (Loop ${loop + 1})`,
-            aiDepth: Math.min(4, baseEncounter.aiDepth + Math.floor(loop / 2)),
-            goldReward: baseEncounter.goldReward + (loop * 30),
-            enemyItems: [...(baseEncounter.enemyItems || []), ...extraItems],
+        const stats = {
+            extraRange: 0,          // +N range for sliding moves
+            extraCaptureRange: 0,   // +N range for sliding captures
+            canJump: false,         // Jump over pieces
+            pawnCanRetreat: false,  // Pawn moves backward
+            pawnCaptureRange: 1,    // Pawn capture diagonal distance (default 1)
+            earlyPromotion: false,  // Pawn promotes on rank 6
+            moveAsQueen: false,     // Move like queen (for king)
+            immuneToPawns: false,   // Can't be captured by pawns
+            dodgeChance: 0,         // Chance to survive capture
+            shield: 0,              // Shield charges granted by items (see _itemShieldMax)
+            goldPerCapture: 0,      // Gold gained per capture
+            goldOnWin: 0,           // Gold gained on round win
+            extraDirections: [],    // Additional move directions [[dr,dc],...] (range 1)
+            extraKnightOffsets: [], // Additional knight L-offsets
+            moveAnywhere: false,    // Can teleport to any empty/enemy square (except friendly + enemy king)
+            // --- Pawn specials ---
+            pawnAlwaysDouble: false,       // Pawn can always push 2 squares (not just from start row)
+            pawnExtraForward: 0,           // Pawn can move up to 1+N squares forward
+            pawnCanCaptureForward: false,  // Pawn can capture directly forward
+            pawnCanCaptureBackward: false, // Pawn can capture diagonally backward
+            // --- Sliding specials ---
+            pierceOne: false,           // Sliding piece can pass through exactly 1 blocking piece per ray
+            canStepAnyDirection: false, // Piece can step 1 square in any direction
+            extraStep: 0,               // Jump N squares in any direction (non-sliding)
+            // --- Immunities ---
+            immuneToKnights: false,
+            immuneToRooks: false,
+            immuneToBishops: false,
+            immuneToQueens: false,
+            immuneToAll: false,       // Can't be captured at all (absolute invulnerability)
+            // --- King movement boost ---
+            extraKingMove: 0,         // King can move N extra squares (like a short-range queen)
+            // --- Economy bonuses ---
+            goldOnQueenCapture: 0,
+            goldOnKnightCapture: 0,
+            goldOnRookCapture: 0,
+            goldOnBishopCapture: 0,
+            goldOnPawnCapture: 0,
+            goldOnLongCapture: 0,     // Extra gold for captures at distance >= 3
+            goldOnCaptured: 0,        // Gold owner earns when THIS piece is captured
+            shieldOnHeavyCapture: 0,  // Gain shield charges when capturing rook/queen
+            // --- Special effects ---
+            venomChance: 0,           // Chance to freeze victim for 1 turn after capture
+            lifesteal: false,         // Capturing heals 1 shield charge
         };
 
-        this._endlessCache = { round: this.currentRound, encounter };
-        return encounter;
-    }
-
-    /**
-     * Begins the current round: sets state to 'playing' and equips the
-     * enemy's item loadout onto the board.
-     * @param {ChessEngine} engine
-     * @returns {Object|null} The encounter that was started, or null if
-     *          there is none (should not normally happen).
-     */
-    startRound(engine) {
-        const encounter = this.getCurrentEncounter();
-        if (!encounter) return null;
-
-        this.state = 'playing';
-        this.capturesThisRound = 0;
-
-        this._equipEnemyItems(engine, encounter);
-
-        return encounter;
-    }
-
-    /**
-     * Equips each `encounter.enemyItems` entry onto the matching black
-     * piece on the board (by type + positional index among same-type
-     * pieces), and tags boss pieces.
-     * @param {ChessEngine} engine
-     * @param {Object} encounter
-     */
-    _equipEnemyItems(engine, encounter) {
-        if (!encounter.enemyItems || encounter.enemyItems.length === 0) return;
-
-        for (const itemDef of encounter.enemyItems) {
-            const item = getItemById(itemDef.itemId);
+        // Count identical items (duplicates legally occupy multiple slots).
+        const itemCounts = {};
+        const uniqueItems = [];
+        for (const item of this.items) {
             if (!item) continue;
-
-            // Find the matching piece on the board.
-            let matchCount = 0;
-            for (let r = 0; r < 8; r++) {
-                for (let c = 0; c < 8; c++) {
-                    const piece = engine.board[r][c];
-                    if (piece && piece.color === 'black' && piece.type === itemDef.pieceType) {
-                        if (matchCount === (itemDef.pieceIndex || 0)) {
-                            const slot = piece.getEmptySlot();
-                            if (slot !== -1) {
-                                // FIX: getItemById() returns the raw ITEMS_DB
-                                // template (by design — it does not clone).
-                                // `{ ...item }` alone only copies the top
-                                // level, leaving `modifiers` aliased to the
-                                // PERMANENT, session-wide catalog entry — any
-                                // future in-place mutation of an equipped
-                                // item's modifiers would corrupt that item
-                                // for every piece, every game, for the rest
-                                // of the session. Deep-cloning `modifiers`
-                                // here matches the same fix already applied
-                                // to every other equip path in this codebase.
-                                piece.setItem(slot, { ...item, modifiers: { ...(item.modifiers || {}) } });
-                            }
-                            if (itemDef.isBossPiece) {
-                                piece.isBoss = true;
-                                piece.bossName = encounter.bossName;
-                                piece.bossDescription = encounter.bossDescription;
-                            }
-                            matchCount = -999; // done
-                            break;
-                        }
-                        matchCount++;
-                    }
-                }
-                if (matchCount === -999) break;
+            if (!itemCounts[item.id]) {
+                itemCounts[item.id] = 0;
+                uniqueItems.push(item);
             }
+            itemCounts[item.id]++;
         }
-    }
 
-    /* ======================================================================
-       Capture tracking
-       ==================================================================== */
+        for (const item of uniqueItems) {
+            const count = itemCounts[item.id];
+            const mods = item.modifiers || {};
 
-    /**
-     * Per-capture hook: gold-per-capture and enemy-item looting.
-     *
-     * NOT CURRENTLY CALLED ANYWHERE in this codebase (verified — grepping
-     * every file finds zero call sites). The actual, working capture-time
-     * economy runs through `engine.goldEarned` (populated inside
-     * ChessEngine.executeMoveAndUpdate, which handles the FULL set of
-     * gold-on-capture item fields — goldOnQueenCapture, goldOnRookCapture,
-     * etc., not just goldPerCapture) plus a direct `runManager.lootItem()`
-     * call in app.js's executePlayerMove. This method only reproduces the
-     * `goldPerCapture` slice of that, incompletely.
-     *
-     * Left in place for API compatibility, but do NOT wire this up as an
-     * additional capture hook without first removing the equivalent logic
-     * from app.js/chess-engine.js — calling both would double-count gold
-     * and double-loot items from the same capture.
-     * @param {PieceEntity} capturer
-     * @param {PieceEntity} victim
-     */
-    onCapture(capturer, victim) {
-        this.capturesThisRound++;
-
-        if (capturer && capturer.color === 'white') {
-            const stats = capturer.getStats();
-            if (stats.goldPerCapture > 0) {
-                this.gold += stats.goldPerCapture;
-            }
-
-            if (victim && victim.color === 'black' && victim instanceof PieceEntity) {
-                victim.getItems().forEach(item => {
-                    if (item && this.playerItems.length < STASH_LIMIT) {
-                        this.playerItems.push({ ...item });
-                    }
-                });
-            }
-        }
-    }
-
-    /* ======================================================================
-       Round end
-       ==================================================================== */
-
-    /** Awards the round's gold reward, records the win, and moves to the shop. */
-    onRoundWin() {
-        const encounter = this.getCurrentEncounter();
-        if (!encounter) return;
-
-        this.gold += encounter.goldReward;
-        // goldOnWin (per-piece item bonus) is computed separately by
-        // app.js via computeGoldOnWin(), which has access to the live board.
-
-        this.roundResults.push({ round: this.currentRound, result: 'win' });
-        this.currentRound++;
-        this._endlessCache = null; // new round -> Endless Mode must regenerate
-
-        // Endless mode: always go to shop after a win, never a hard "victory".
-        this.state = 'shop';
-    }
-
-    /**
-     * Collects every item off every white piece on the board back into the
-     * stash (called after a round win, before the shop). Directly zeroes
-     * `items`/`shield` rather than looping `removeItem()` per slot — safe
-     * here because this only ever runs between rounds, before any combat
-     * on the fresh board has happened, so there is no accumulated combat
-     * shield to preserve (see PieceEntity's shield-delta model).
-     * @param {ChessEngine} engine
-     */
-    collectItemsFromBoard(engine) {
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                const piece = engine.board[r][c];
-                if (piece && piece.color === 'white' && piece instanceof PieceEntity) {
-                    piece.getItems().forEach(item => {
-                        if (item && this.playerItems.length < STASH_LIMIT) {
-                            this.playerItems.push({ ...item });
-                        }
-                    });
-                    piece.items = [null, null, null];
-                    piece.shield = 0;
+            for (const [key, value] of Object.entries(mods)) {
+                // Arrays never belong inside `modifiers` (they live as
+                // top-level item fields — see below); skip defensively in
+                // case malformed item data nests them here anyway.
+                if (key === 'extraDirections' || key === 'extraKnightOffsets') continue;
+                if (typeof value === 'number') {
+                    stats[key] = (stats[key] || 0) + (value * count);
+                } else if (typeof value === 'boolean' && value) {
+                    stats[key] = true;
                 }
             }
+
+            // extraDirections / extraKnightOffsets are top-level item
+            // fields (not inside `modifiers`); each stacked copy repeats
+            // its contribution.
+            if (item.extraDirections) {
+                for (let i = 0; i < count; i++) stats.extraDirections.push(...item.extraDirections);
+            }
+            if (item.extraKnightOffsets) {
+                for (let i = 0; i < count; i++) stats.extraKnightOffsets.push(...item.extraKnightOffsets);
+            }
+
+            // Synergy: every stacked-count threshold AT OR BELOW the
+            // current count contributes its bonus (thresholds are
+            // cumulative, not "highest tier only" — e.g. a 2-copy bonus
+            // AND a 3-copy bonus both apply once 3 are equipped).
+            if (item.synergy) {
+                for (let c = 2; c <= count; c++) {
+                    const tier = item.synergy[c];
+                    if (!tier) continue;
+                    const synMods = tier.modifiers || {};
+                    for (const [key, value] of Object.entries(synMods)) {
+                        if (typeof value === 'number') {
+                            stats[key] = (stats[key] || 0) + value;
+                        } else if (typeof value === 'boolean' && value) {
+                            stats[key] = true;
+                        }
+                    }
+                }
+            }
         }
+
+        // Probability-like stats are capped below 1.0 so the "unlucky for
+        // the attacker" outcome always remains possible, however heavily
+        // the ability is stacked. Both dodge (survive being captured) and
+        // venom (freeze on capture) use the same cap for consistency —
+        // the old code only clamped dodgeChance, letting stacked venom
+        // items exceed 1.0 and become a guaranteed effect.
+        stats.dodgeChance = this._clampProbability(stats.dodgeChance);
+        stats.venomChance = this._clampProbability(stats.venomChance);
+
+        this._statsCache = stats;
+        this._statsDirty = false;
+        return this._cloneStats(stats);
     }
 
     /**
-     * Loots a single item (e.g. from a piece captured this move) into the stash.
-     * @param {Object} item
-     * @returns {boolean} True if it fit (stash wasn't full).
-     */
-    lootItem(item) {
-        if (item && this.playerItems.length < STASH_LIMIT) {
-            this.playerItems.push({ ...item });
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Recruits a surviving enemy piece TYPE as a bonus piece for future
-     * setups (kings are never recruitable).
-     * @param {string} type
-     */
-    recruitPiece(type) {
-        if (type === 'king') return;
-        this.bonusPieces[type] = (this.bonusPieces[type] || 0) + 1;
-    }
-
-    /** Records a round loss and moves to the defeat state. */
-    onRoundLose() {
-        this.roundResults.push({ round: this.currentRound, result: 'lose' });
-        this.state = 'defeat';
-    }
-
-    /**
-     * Sums the `goldOnWin` item stat across every white piece on the board.
-     * @param {ChessEngine} engine
+     * Clamps a probability-like stat into [0, MAX_PROBABILITY].
+     * @param {number} p
      * @returns {number}
      */
-    computeGoldOnWin(engine) {
-        let bonus = 0;
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                const piece = engine.board[r][c];
-                if (piece && piece.color === 'white' && piece.getStats) {
-                    bonus += piece.getStats().goldOnWin || 0;
-                }
-            }
-        }
-        return bonus;
-    }
-
-    /* ======================================================================
-       Shop
-       ==================================================================== */
-
-    /**
-     * @param {number} [count=4]
-     * @returns {Array<Object>} Shop offers (delegates to items-db.js's getShopItems).
-     */
-    getShopItems(count = 4) {
-        return getShopItems(count, this.gold);
+    _clampProbability(p) {
+        if (p > MAX_PROBABILITY) return MAX_PROBABILITY;
+        if (p < 0) return 0;
+        return p;
     }
 
     /**
-     * Buys an item into the stash if gold and space allow.
-     * @param {Object} item
-     * @param {number} [costOverride] - Effective price to charge (e.g. a
-     *        merchants_ring shop discount). The item itself is stored with
-     *        its ORIGINAL catalog cost, so sell value / balance data stay
-     *        anchored to the catalog, not to the discounted purchase.
-     * @returns {boolean|'full'}
+     * Defensive shallow copy of a stats object, including fresh array
+     * copies for the two mutable list fields — protects the cache from
+     * accidental mutation by callers.
+     * @param {Object} stats
+     * @returns {Object}
      */
-    buyItem(item, costOverride) {
-        const price = (typeof costOverride === 'number') ? costOverride : item.cost;
-        if (this.gold < price) return false;
-        if (this.playerItems.length >= STASH_LIMIT) return 'full';
-        this.gold -= price;
-        this.playerItems.push({ ...item, modifiers: { ...(item.modifiers || {}) } });
-        return true;
-    }
-
-    /**
-     * Sells a stashed item for half its cost (rounded down).
-     * @param {number} index
-     * @returns {boolean} True on success.
-     */
-    sellItem(index) {
-        if (index < 0 || index >= this.playerItems.length) return false;
-        const item = this.playerItems[index];
-        this.gold += Math.floor(item.cost * 0.5);
-        this.playerItems.splice(index, 1);
-        return true;
-    }
-
-    /* ======================================================================
-       Item equipment
-       ==================================================================== */
-
-    /**
-     * Equips a stashed item onto a piece.
-     * @param {number} itemIndex - Index into this.playerItems.
-     * @param {PieceEntity} piece
-     * @param {boolean} [keepInStash=false] - If true, the item stays in the
-     *        stash as well as being equipped (used for preview/creative flows).
-     * @returns {boolean} True on success.
-     */
-    equipItemToPiece(itemIndex, piece, keepInStash = false) {
-        if (itemIndex < 0 || itemIndex >= this.playerItems.length) return false;
-        const item = this.playerItems[itemIndex];
-
-        if (!item.allowedPieces.includes('all') && !item.allowedPieces.includes(piece.type)) {
-            return false;
-        }
-
-        const slot = piece.getEmptySlot();
-        if (slot === -1) return false;
-
-        // FIX: deep-clone `modifiers` — with keepInStash=true the original
-        // stays in this.playerItems, so a shallow `{ ...item }` would leave
-        // the equipped copy and the still-stashed copy sharing the same
-        // modifiers object. Not currently exercised (every call site in
-        // this codebase passes keepInStash=false), but a real trap for any
-        // future caller that does pass true.
-        piece.setItem(slot, { ...item, modifiers: { ...(item.modifiers || {}) } });
-        if (!keepInStash) {
-            this.playerItems.splice(itemIndex, 1);
-        }
-        return true;
-    }
-
-    /**
-     * Unequips an item from a piece back into the stash.
-     * @param {PieceEntity} piece
-     * @param {number} slot
-     * @param {boolean} [destroyOnUnequip=false] - If true, discard the item
-     *        entirely instead of returning it to the stash.
-     * @returns {boolean|'full'} true on success, 'full' if the stash is full
-     *          (the item is re-equipped in that case, so nothing is lost).
-     */
-    unequipItemFromPiece(piece, slot, destroyOnUnequip = false) {
-        const item = piece.removeItem(slot);
-        if (!item) return false;
-
-        if (destroyOnUnequip) {
-            return true;
-        }
-
-        if (this.playerItems.length >= STASH_LIMIT) {
-            // Stash full — re-equip the SAME item object we just removed.
-            // PieceEntity's shield-delta model (see piece-entity.js) makes
-            // this remove-then-immediately-reapply a clean no-op on shield.
-            piece.setItem(slot, item);
-            return 'full';
-        }
-        this.playerItems.push(item);
-        return true;
-    }
-
-    /** Advances from the shop back to setting up the next round. */
-    finishShopping() {
-        this.state = 'setup';
-    }
-
-    /* ======================================================================
-       State queries
-       ==================================================================== */
-
-    isRunActive() { return this.active; }
-    isPlaying() { return this.state === 'playing'; }
-    isShop() { return this.state === 'shop'; }
-    isVictory() { return this.state === 'victory'; }
-    isDefeat() { return this.state === 'defeat'; }
-
-    /**
-     * @returns {{current:number, total:number, encounter:Object}} Human-
-     *          facing round info (1-indexed current round).
-     */
-    getRoundInfo() {
+    _cloneStats(stats) {
         return {
-            current: this.currentRound + 1,
-            total: this.totalRounds,
-            encounter: this.getCurrentEncounter(),
+            ...stats,
+            extraDirections: stats.extraDirections.slice(),
+            extraKnightOffsets: stats.extraKnightOffsets.slice(),
         };
     }
 
     /* ======================================================================
-       Persistence (run save / restore)
-       ======================================================================
-       Between-round checkpointing. Only meta-state is saved: after every
-       round win collectItemsFromBoard() pulls all equipment back into the
-       stash, so at shop/setup time the ENTIRE run is exactly {gold, round,
-       stash, recruits, results} — no board state needed.
-
-       Stash items are stored as catalog IDs only and re-hydrated from
-       ITEMS_DB on restore. This keeps saves tiny, immune to the "stale
-       modifiers object" class of bugs, and self-healing across balance
-       patches: unknown/removed IDs are silently dropped instead of
-       resurrecting outdated item definitions. */
-
-    /** Save-format version. Bump on breaking changes to the payload. */
-    static get SAVE_VERSION() { return 1; }
+       Item value for AI evaluation
+       ==================================================================== */
 
     /**
-     * @returns {Object} Plain-data snapshot of the run, safe for
-     *          JSON.stringify/localStorage (no entities, no functions).
+     * Rough centipawn-equivalent value of everything this piece has
+     * equipped, added into ChessAI.evaluate()'s material score.
+     *
+     * Every field defined in getStats() is weighted here — the previous
+     * version left roughly half of them at zero, most notably
+     * `moveAnywhere` (an anywhere-but-the-king teleport, arguably the
+     * single strongest ability obtainable) and `pawnCaptureRange`, so the
+     * AI could neither prioritize acquiring nor defending against them.
+     * Weights are hand-tuned heuristics, not a formal analysis — treat
+     * them as a starting point for balancing, not gospel.
+     *
+     * @returns {number} Heuristic value in centipawns.
      */
-    serialize() {
-        return {
-            v: RunManager.SAVE_VERSION,
-            savedAt: Date.now(),
-            active: this.active,
-            gold: this.gold,
-            currentRound: this.currentRound,
-            capturesThisRound: this.capturesThisRound,
-            startingItemsGiven: this.startingItemsGiven,
-            bonusPieces: { ...this.bonusPieces },
-            roundResults: this.roundResults.map(r => ({ ...r })),
-            playerItems: this.playerItems.map(it => it.id),
-        };
-    }
+    getItemValue() {
+        let value = 0;
+        for (const item of this.items) {
+            if (!item) continue;
+            const m = item.modifiers || {};
 
-    /**
-     * Restores a run from a serialize() payload. Defensive by design:
-     * validates shape/version, whitelists every field, and re-hydrates
-     * stash items from the live catalog.
-     * @param {Object} data - Parsed save payload.
-     * @returns {boolean} True if the run was restored; false if the
-     *          payload is missing/invalid (state is left reset).
-     */
-    restore(data) {
-        if (!data || typeof data !== 'object') return false;
-        if (data.v !== RunManager.SAVE_VERSION) return false;
-        if (!data.active) return false;
-        if (!Number.isInteger(data.currentRound) || data.currentRound < 0) return false;
+            // --- Movement / range ---
+            value += (m.extraRange || 0) * 30;
+            value += (m.extraCaptureRange || 0) * 25;
+            value += (m.canJump ? 40 : 0);
+            value += (m.moveAsQueen ? 150 : 0);
+            value += (m.pierceOne ? 60 : 0);
+            value += (m.canStepAnyDirection ? 45 : 0);
+            value += (m.extraStep || 0) * 35;
+            value += (m.extraKingMove || 0) * 20;
+            value += (m.moveAnywhere ? 250 : 0); // strongest single ability in the game
+            if (item.extraDirections) value += item.extraDirections.length * 20;
+            if (item.extraKnightOffsets) value += item.extraKnightOffsets.length * 25;
 
-        this.reset(); // fresh encounters sequence + clean defaults
+            // --- Pawn specials ---
+            // pawnCaptureRange defaults to 1 (no item); value only the bonus.
+            value += Math.max(0, (m.pawnCaptureRange || 1) - 1) * 45;
+            value += (m.pawnAlwaysDouble ? 20 : 0);
+            value += (m.pawnExtraForward || 0) * 15;
+            value += (m.pawnCanCaptureForward ? 25 : 0);
+            value += (m.pawnCanCaptureBackward ? 25 : 0);
+            value += (m.pawnCanRetreat ? 10 : 0);
+            value += (m.earlyPromotion ? 50 : 0);
 
-        this.active = true;
-        this.gold = Number.isFinite(data.gold) ? Math.max(0, Math.floor(data.gold)) : 0;
-        this.currentRound = data.currentRound;
-        this.capturesThisRound = Number.isInteger(data.capturesThisRound) ? data.capturesThisRound : 0;
-        this.startingItemsGiven = !!data.startingItemsGiven;
-        this.state = 'setup'; // resume screen is decided by app.js, not the save
+            // --- Defense ---
+            value += (m.shield || 0) * 80;
+            value += (m.dodgeChance || 0) * 100;
+            value += (m.immuneToPawns ? 30 : 0);
+            value += (m.immuneToKnights ? 35 : 0);
+            value += (m.immuneToRooks ? 50 : 0);
+            value += (m.immuneToBishops ? 35 : 0);
+            value += (m.immuneToQueens ? 60 : 0);
+            value += (m.immuneToAll ? 200 : 0);
 
-        if (data.bonusPieces && typeof data.bonusPieces === 'object') {
-            for (const [type, n] of Object.entries(data.bonusPieces)) {
-                if (type !== 'king' && Number.isInteger(n) && n > 0) this.bonusPieces[type] = n;
-            }
+            // --- Combat effects ---
+            value += (m.venomChance || 0) * 60;
+            value += (m.lifesteal ? 50 : 0);
+            value += (m.shieldOnHeavyCapture || 0) * 40;
+
+            // --- Economy (minor weight: affects run currency, not the
+            //     board directly, but still makes the piece worth more
+            //     to keep alive) ---
+            value += (m.goldPerCapture || 0) * 1.5;
+            value += (m.goldOnQueenCapture || 0) * 5;
+            value += (m.goldOnRookCapture || 0) * 4;
+            value += (m.goldOnBishopCapture || 0) * 3;
+            value += (m.goldOnKnightCapture || 0) * 3;
+            value += (m.goldOnPawnCapture || 0) * 1;
+            value += (m.goldOnLongCapture || 0) * 2;
+            value += (m.goldOnCaptured || 0) * 1;
+            value += (m.goldOnWin || 0) * 1;
         }
-        if (Array.isArray(data.roundResults)) {
-            this.roundResults = data.roundResults
-                .filter(r => r && Number.isInteger(r.round) && (r.result === 'win' || r.result === 'lose'))
-                .map(r => ({ round: r.round, result: r.result }));
-        }
-        if (Array.isArray(data.playerItems)) {
-            for (const id of data.playerItems) {
-                if (this.playerItems.length >= STASH_LIMIT) break;
-                const item = (typeof id === 'string') ? getItemById(id) : null;
-                if (item) {
-                    // Same deep-clone-of-modifiers rule as every equip path.
-                    this.playerItems.push({ ...item, modifiers: { ...(item.modifiers || {}) } });
-                }
-            }
-        }
-        return true;
+        return value;
     }
 }
+
+/** @type {number} Monotonic id source for newly constructed pieces. */
+PieceEntity._nextId = 1;
+/** Resets the id counter (called at the start of a fresh game/round). */
+PieceEntity.resetIdCounter = function () { PieceEntity._nextId = 1; };

@@ -1,313 +1,188 @@
 /* ============================================================================
-   multiplayer.js — Firebase Realtime Multiplayer (refactored)
-   for qq.chess "Play with Friend" mode
+   Item Stats Tracker — qq.chess winrate & usage analytics (refactored)
    ============================================================================
-   Trust model: every move that arrives here is handed to app.js's
-   onOpponentMove handler, which (as of the app.js audit pass) routes it
-   through ChessEngine.makeMove() — the same legality gate a local click
-   gets — rather than executing it blindly. That fix lives in app.js; this
-   file's job is just to move bytes reliably and not clobber someone else's
-   room while doing it.
+   Persists per-item usage/outcome counters to localStorage so the shop UI
+   can show a "this item wins X% of the time" hint (ItemStats.format()).
+
+   TWO SEPARATE COUNTERS, ONE SHARED PITFALL:
+     • `used`         — how many times the item was equipped (popularity).
+     • `wins`/`losses` — how many completed rounds it was equipped for.
+   These are fed by DIFFERENT call sites (an equip action vs. a round
+   ending), so they can legitimately drift apart, and — as found in this
+   audit — one of them can simply never be wired up at all. Only wins/losses
+   are used for the winrate shown to players; `used` is a separate,
+   independent popularity signal and must never be required as a precondition
+   for computing a winrate, or the whole feature quietly goes dark the moment
+   nothing happens to call recordUsed(). See _computeWinrate() below.
    ========================================================================= */
 
-// PLACEHOLDER config — user must replace with their Firebase project credentials
-const FIREBASE_CONFIG = {
-    apiKey: 'AIzaSyA4TjqkA4c-7wqRXrkESfWFH8MJGGtuFRo',
-    authDomain: 'multiplayer-90dc2.firebaseapp.com',
-    databaseURL: 'https://multiplayer-90dc2-default-rtdb.europe-west1.firebasedatabase.app',
-    projectId: 'multiplayer-90dc2',
-    storageBucket: 'multiplayer-90dc2.firebasestorage.app',
-    messagingSenderId: '144435271438',
-    appId: '1:144435271438:web:f28de3da70ccdf21cfa95f'
+const ITEM_STATS_KEY = 'chess_item_stats';
+
+/** In-memory cache to avoid repeated JSON parse/serialize on every call. */
+let _statsCache = null;
+
+const ItemStats = {
+    /**
+     * Loads the stats blob (cached after the first call).
+     *
+     * NOTE: returns the LIVE cache object, not a defensive copy. Every
+     * method in this module immediately follows a load() with a save() of
+     * the same (mutated) object, which is safe. If external code ever
+     * calls ItemStats.load() directly, it must treat the result as
+     * read-only or call ItemStats.save() afterward — mutating it silently
+     * bypasses the persistence path.
+     * @returns {Object<string,{used:number,wins:number,losses:number}>}
+     */
+    load() {
+        if (_statsCache) return _statsCache;
+        try {
+            const raw = localStorage.getItem(ITEM_STATS_KEY);
+            _statsCache = raw ? JSON.parse(raw) : {};
+        } catch (e) {
+            _statsCache = {};
+        }
+        return _statsCache;
+    },
+
+    /**
+     * Persists the stats blob and updates the in-memory cache.
+     * @param {Object} stats
+     */
+    save(stats) {
+        _statsCache = stats;
+        try {
+            localStorage.setItem(ITEM_STATS_KEY, JSON.stringify(stats));
+        } catch (e) {
+            // Quota exceeded / storage disabled: stats simply won't persist
+            // across sessions, but gameplay must not be interrupted by it.
+        }
+    },
+
+    /**
+     * Ensures a stats record exists for an item id.
+     * @param {Object} stats
+     * @param {string} itemId
+     * @returns {{used:number,wins:number,losses:number}}
+     */
+    _ensure(stats, itemId) {
+        if (!stats[itemId]) stats[itemId] = { used: 0, wins: 0, losses: 0 };
+        return stats[itemId];
+    },
+
+    /**
+     * Records that an item was equipped in a run (popularity counter).
+     *
+     * NOTE FOR INTEGRATORS: as of this audit, nothing in the codebase calls
+     * this method — grepping every file that could plausibly equip an item
+     * (app.js, editor.js, run-manager.js) found zero call sites. `used`
+     * will read 0 for every item until an equip-time call is added
+     * upstream (in whatever code path assigns an item to a piece). This is
+     * independent from win/loss tracking below, which already works.
+     * @param {string} itemId
+     */
+    recordUsed(itemId) {
+        const stats = this.load();
+        this._ensure(stats, itemId).used++;
+        this.save(stats);
+    },
+
+    /**
+     * Records a win — credits every item equipped on the winning side.
+     * @param {string[]} [equippedItemIds]
+     */
+    recordWin(equippedItemIds = []) {
+        const stats = this.load();
+        equippedItemIds.forEach(itemId => {
+            if (!itemId) return;
+            this._ensure(stats, itemId).wins++;
+        });
+        this.save(stats);
+    },
+
+    /**
+     * Records a loss — credits every item that was equipped.
+     * @param {string[]} [equippedItemIds]
+     */
+    recordLoss(equippedItemIds = []) {
+        const stats = this.load();
+        equippedItemIds.forEach(itemId => {
+            if (!itemId) return;
+            this._ensure(stats, itemId).losses++;
+        });
+        this.save(stats);
+    },
+
+    /**
+     * Shared winrate calculation used by both getWinrate() and getAll().
+     *
+     * FIX: the previous version had TWO DIFFERENT formulas for the same
+     * statistic — getWinrate() divided by `used`, getAll() divided by
+     * `wins + losses` — and, because nothing in the codebase ever calls
+     * recordUsed(), `used` is always 0, which made getWinrate() (the one
+     * actually wired into the shop UI via format()) return null 100% of
+     * the time, for every item, permanently, even though wins/losses were
+     * being recorded correctly the whole time. Standardizing on
+     * `wins + losses` — the denominator that is ACTUALLY fed by real call
+     * sites — fixes the shop display immediately and guarantees the two
+     * public methods can never disagree with each other again.
+     * @param {{wins:number,losses:number}|undefined} s
+     * @returns {number|null} Rounded percentage, or null if no games recorded.
+     */
+    _computeWinrate(s) {
+        if (!s) return null;
+        const games = s.wins + s.losses;
+        if (games === 0) return null;
+        return Math.round((s.wins / games) * 100);
+    },
+
+    /**
+     * Winrate for a specific item (0-100), or null if it has no recorded
+     * wins/losses yet.
+     * @param {string} itemId
+     * @returns {number|null}
+     */
+    getWinrate(itemId) {
+        const stats = this.load();
+        return this._computeWinrate(stats[itemId]);
+    },
+
+    /**
+     * All tracked items' stats, sorted by usage (most-equipped first).
+     * @returns {Array<{id:string, used:number, wins:number, losses:number, games:number, winrate:?number}>}
+     */
+    getAll() {
+        const stats = this.load();
+        return Object.entries(stats)
+            .map(([id, s]) => ({
+                id,
+                used: s.used,
+                wins: s.wins,
+                losses: s.losses,
+                games: s.wins + s.losses,
+                winrate: this._computeWinrate(s),
+            }))
+            .sort((a, b) => b.used - a.used);
+    },
+
+    /**
+     * Display-ready winrate string for the shop UI.
+     * @param {string} itemId
+     * @returns {string} e.g. "67%", or "—" if no games are recorded yet.
+     */
+    format(itemId) {
+        const wr = this.getWinrate(itemId);
+        return wr !== null ? `${wr}%` : '—';
+    },
+
+    /** Clears all tracked stats (e.g. a "reset stats" settings option). */
+    reset() {
+        _statsCache = {};
+        try {
+            localStorage.removeItem(ITEM_STATS_KEY);
+        } catch (e) {
+            // Storage unavailable: the in-memory cache is still cleared
+            // above, so the running session behaves as reset even if the
+            // persisted blob couldn't be touched.
+        }
+    },
 };
-
-// Initialize Firebase app only once
-if (!firebase.apps || !firebase.apps.length) {
-    firebase.initializeApp(FIREBASE_CONFIG);
-}
-const db = firebase.database();
-
-/** Alphabet avoids visually-ambiguous characters (no I/O/0/1). */
-const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const ROOM_CODE_LENGTH = 5;
-/** Matches exactly what generateRoomCode() can produce — used to validate
- *  user-typed/pasted codes before they're used as a Firebase path segment. */
-const ROOM_CODE_PATTERN = new RegExp(`^[${ROOM_CODE_ALPHABET}]{${ROOM_CODE_LENGTH}}$`);
-/** Bounds the collision-retry loop in createRoom() so a pathological run
- *  of bad luck can't spin forever. */
-const MAX_ROOM_CODE_ATTEMPTS = 5;
-
-function generateRoomCode() {
-    let code = '';
-    for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
-        code += ROOM_CODE_ALPHABET[Math.floor(Math.random() * ROOM_CODE_ALPHABET.length)];
-    }
-    return code;
-}
-
-window.Multiplayer = (function () {
-    let _roomCode = null;
-    let _role = null; // 'host' or 'guest'
-    /** FIX: onBothLobbyReady is driven by TWO 'value' listeners (host +
-     *  guest lobby_ready), each of which re-reads both flags via nested
-     *  once(). Once both flags were true, EVERY subsequent value event
-     *  re-fired the callback. This latch guarantees exactly one
-     *  invocation per room session. */
-    let _bothLobbyFired = false;
-    let _callbacks = {};
-    let _listeners = [];
-
-    function _on(ref, event, cb) {
-        ref.on(event, cb);
-        _listeners.push({ ref, event, cb });
-    }
-
-    /**
-     * Attaches every room listener (guest-ready, colors, moves, setup,
-     * lobby-ready) for the host role. Split out of createRoom() so it can
-     * be (re)run against whichever code the collision-retry loop ends up
-     * actually claiming.
-     */
-    function _attachHostListeners() {
-        _on(db.ref(`rooms/${_roomCode}/guest/online`), 'value', (snap) => {
-            if (snap.val() === true && _callbacks.onOpponentReady) {
-                _callbacks.onOpponentReady();
-            }
-        });
-
-        _on(db.ref(`rooms/${_roomCode}/colors`), 'value', (snap) => {
-            if (snap.val() && _callbacks.onColorsAssigned) {
-                _callbacks.onColorsAssigned(snap.val());
-            }
-        });
-
-        _on(db.ref(`rooms/${_roomCode}/moves`), 'child_added', (snap) => {
-            const data = snap.val();
-            if (data && data.from !== _role && _callbacks.onOpponentMove) {
-                _callbacks.onOpponentMove(data);
-            }
-        });
-
-        _on(db.ref(`rooms/${_roomCode}/guest/setup`), 'value', (snap) => {
-            if (snap.val() && _callbacks.onSetupSubmitted) {
-                _callbacks.onSetupSubmitted('guest', snap.val());
-            }
-        });
-
-        function _checkLobbyReady() {
-            db.ref(`rooms/${_roomCode}/host/lobby_ready`).once('value').then(hostSnap => {
-                db.ref(`rooms/${_roomCode}/guest/lobby_ready`).once('value').then(guestSnap => {
-                    if (hostSnap.val() && guestSnap.val() && !_bothLobbyFired && _callbacks.onBothLobbyReady) {
-                        _bothLobbyFired = true;
-                        _callbacks.onBothLobbyReady();
-                    }
-                });
-            });
-        }
-        _on(db.ref(`rooms/${_roomCode}/host/lobby_ready`), 'value', () => _checkLobbyReady());
-        _on(db.ref(`rooms/${_roomCode}/guest/lobby_ready`), 'value', () => _checkLobbyReady());
-    }
-
-    /**
-     * Creates a fresh room, claiming a code via an atomic transaction so a
-     * (rare) collision with an existing room can NEVER silently overwrite
-     * it — the transaction only succeeds if the path is currently empty.
-     *
-     * FIX: the previous version used `roomRef.set(...)`, an unconditional
-     * write. With ~33.5M possible codes a collision is unlikely on any
-     * single call, but not impossible, and an unconditional `set()` would
-     * have clobbered another pair's active game (status, online flags,
-     * and move history) with zero warning. On a genuine collision this
-     * version regenerates a new code and retries (bounded — see
-     * MAX_ROOM_CODE_ATTEMPTS) instead of touching the occupied room at all.
-     *
-     * The synchronous return-value contract is preserved for the existing
-     * caller in app.js (it displays the code immediately) — this resolves
-     * on the FIRST generated code optimistically. In the vanishingly rare
-     * case a retry is needed, pass `onRoomCodeChanged` in `callbacks` to be
-     * notified of the corrected code; existing callers that don't provide
-     * it keep working exactly as before (correctness is still guaranteed
-     * server-side — only the already-displayed code string could lag
-     * behind on that one-in-many-million retry path).
-     * @param {Object} callbacks
-     * @returns {string} The room code (may be superseded — see above).
-     */
-    function createRoom(callbacks) {
-        _callbacks = callbacks || {};
-        _role = 'host';
-        _bothLobbyFired = false;
-        _roomCode = generateRoomCode();
-
-        _claimRoomCode(_roomCode, 1);
-
-        return _roomCode;
-    }
-
-    /**
-     * Attempts to atomically claim `code` for a new room. On collision,
-     * regenerates and retries (up to MAX_ROOM_CODE_ATTEMPTS); on final
-     * failure, reports via onError rather than ever falling back to an
-     * unconditional overwrite.
-     * @param {string} code
-     * @param {number} attempt
-     */
-    function _claimRoomCode(code, attempt) {
-        const roomRef = db.ref(`rooms/${code}`);
-        roomRef.transaction((current) => {
-            if (current !== null) return undefined; // abort — path occupied
-            return { status: 'waiting', host: { online: true }, guest: { online: false } };
-        }).then((result) => {
-            if (!result.committed) {
-                // Collision: someone else already owns this code.
-                if (attempt >= MAX_ROOM_CODE_ATTEMPTS) {
-                    if (_callbacks.onError) {
-                        _callbacks.onError('Не удалось создать комнату, попробуйте ещё раз');
-                    }
-                    return;
-                }
-                const nextCode = generateRoomCode();
-                _roomCode = nextCode;
-                if (_callbacks.onRoomCodeChanged) _callbacks.onRoomCodeChanged(nextCode);
-                _claimRoomCode(nextCode, attempt + 1);
-                return;
-            }
-
-            // Claimed successfully — this is now really our room.
-            _roomCode = code;
-            roomRef.onDisconnect().remove();
-            _attachHostListeners();
-        }).catch((err) => {
-            if (_callbacks.onError) _callbacks.onError('Ошибка сети: ' + err.message);
-        });
-    }
-
-    /**
-     * Joins an existing room by code.
-     *
-     * FIX: the user-supplied code is now validated against the exact
-     * alphabet/length generateRoomCode() can produce BEFORE it's used to
-     * build a Firebase path. Firebase RTDB keys forbid `. # $ [ ] /` and
-     * control characters — an unvalidated paste (stray slash, wrong
-     * length, pasted whitespace-containing text, etc.) could throw
-     * SYNCHRONOUSLY out of `db.ref()`, before the promise chain below even
-     * starts, bypassing the .catch() error handling entirely. Rejecting
-     * malformed input up front turns that into the same graceful
-       onError('Комната не найдена') path as any other bad code.
-     * @param {string} code
-     * @param {Object} callbacks
-     */
-    function joinRoom(code, callbacks) {
-        _callbacks = callbacks || {};
-        _role = 'guest';
-        _bothLobbyFired = false;
-
-        const normalized = (code || '').toUpperCase().trim();
-        if (!ROOM_CODE_PATTERN.test(normalized)) {
-            if (_callbacks.onError) _callbacks.onError('Комната не найдена');
-            return;
-        }
-        _roomCode = normalized;
-        const roomRef = db.ref(`rooms/${_roomCode}`);
-
-        roomRef.once('value').then((snap) => {
-            if (!snap.exists()) {
-                if (_callbacks.onError) _callbacks.onError('Комната не найдена');
-                return;
-            }
-
-            // FIX: Subscribe to colors BEFORE setting guest/online=true, so the
-            // listener is guaranteed to be active when the host writes colors.
-
-            // Listen for colors assignment (guest reads what host wrote)
-            _on(db.ref(`rooms/${_roomCode}/colors`), 'value', (snap) => {
-                if (snap.val() && _callbacks.onColorsAssigned) {
-                    _callbacks.onColorsAssigned(snap.val());
-                }
-            });
-
-            // Listen for host moves
-            _on(db.ref(`rooms/${_roomCode}/moves`), 'child_added', (snap) => {
-                const data = snap.val();
-                if (data && data.from !== _role && _callbacks.onOpponentMove) {
-                    _callbacks.onOpponentMove(data);
-                }
-            });
-
-            // Listen for host setup
-            _on(db.ref(`rooms/${_roomCode}/host/setup`), 'value', (snap) => {
-                if (snap.val() && _callbacks.onSetupSubmitted) {
-                    _callbacks.onSetupSubmitted('host', snap.val());
-                }
-            });
-
-            // Listen for lobby ready state (both players must click 'Готов к расстановке')
-            function _checkLobbyReady() {
-                db.ref(`rooms/${_roomCode}/host/lobby_ready`).once('value').then(hostSnap => {
-                    db.ref(`rooms/${_roomCode}/guest/lobby_ready`).once('value').then(guestSnap => {
-                        if (hostSnap.val() && guestSnap.val() && !_bothLobbyFired && _callbacks.onBothLobbyReady) {
-                            _bothLobbyFired = true;
-                            _callbacks.onBothLobbyReady();
-                        }
-                    });
-                });
-            }
-            _on(db.ref(`rooms/${_roomCode}/host/lobby_ready`), 'value', () => _checkLobbyReady());
-            _on(db.ref(`rooms/${_roomCode}/guest/lobby_ready`), 'value', () => _checkLobbyReady());
-
-            // FIX: Set guest/online AFTER all listeners are attached — prevents the host
-            // from writing colors before the guest's colors listener is ready.
-            db.ref(`rooms/${_roomCode}/guest/online`).set(true).catch(err => {
-                if (_callbacks.onError) _callbacks.onError('Ошибка сети: ' + err.message);
-            });
-            roomRef.onDisconnect().update({ 'guest/online': false });
-
-            if (_callbacks.onOpponentReady) _callbacks.onOpponentReady();
-        }).catch((error) => {
-            if (_callbacks.onError) _callbacks.onError('Ошибка подключения: ' + error.message);
-        });
-    }
-
-    function sendSetup(setupData) {
-        if (!_roomCode || !_role) return;
-        db.ref(`rooms/${_roomCode}/${_role}/setup`).set(setupData);
-    }
-
-    /** Host calls this after coin flip to broadcast color assignment */
-    function sendColors(hostColor) {
-        if (!_roomCode) return;
-        db.ref(`rooms/${_roomCode}/colors`).set(hostColor);
-    }
-
-    /** Signal that the local player clicked 'Готов к расстановке' */
-    function sendLobbyReady() {
-        if (!_roomCode || !_role) return;
-        db.ref(`rooms/${_roomCode}/${_role}/lobby_ready`).set(true);
-    }
-
-    function sendMove(moveData) {
-        if (!_roomCode || !_role) return;
-        db.ref(`rooms/${_roomCode}/moves`).push({
-            ...moveData,
-            from: _role,
-            ts: Date.now()
-        });
-    }
-
-    function sendEquip(equipData) {
-        sendMove({ type: 'equip', ...equipData });
-    }
-
-    function cleanup() {
-        _listeners.forEach(({ ref, event, cb }) => ref.off(event, cb));
-        _listeners = [];
-        _roomCode = null;
-        _bothLobbyFired = false;
-        _role = null;
-        _callbacks = {};
-    }
-
-    function getRoomCode() { return _roomCode; }
-    function getRole() { return _role; }
-
-    return { createRoom, joinRoom, sendSetup, sendColors, sendLobbyReady, sendMove, sendEquip, cleanup, getRoomCode, getRole };
-})();
