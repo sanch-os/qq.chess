@@ -1,1558 +1,704 @@
 /* ============================================================================
-   Items Database — qq.chess item catalog (audited)
+   locales.js — qq.chess translations (audited)
    ============================================================================
-   AUDIT FINDING (headline of this pass): every modifier key below is only
-   as real as PieceEntity.getStats() and ChessEngine's capture/turn pipeline
-   choosing to read it. Cross-referencing every key used in this file
-   against the entire codebase (engine, AI, UI, run-manager, encounters,
-   extraction-manager) turned up FOURTEEN items — including six of the
-   eight "legendary" tier items — whose flagship modifier is read by
-   NOTHING: the item can be bought and equipped, the UI happily displays
-   its description, and it does precisely nothing in play.
-
-   Two were pure NAMING bugs and are fixed in place below, using engine
-   capabilities that already exist and are already tested:
-     • infinity_stone  : `omnimove`      → renamed to `moveAnywhere`
-                          (the engine's real key for this exact ability;
-                          see beta_tester_cap and the Horseshoe synergy).
-     • demonic_pact     : `shieldPenalty` → renamed to `shield: -1`
-                          (the engine already aggregates negative numeric
-                          `shield` modifiers correctly — see mirror_armor's
-                          `extraRange: -1` for the existing precedent).
-
-   The remaining TWELVE genuinely have no engine hook to rename onto —
-   they describe mechanics (gold multipliers, revival, shop discounts,
-   conditional dodge, periodic random effects, drop chance, promotion on
-   capture) that ChessEngine / PieceEntity / the shop UI do not implement
-   yet. Inventing that logic silently inside a pure data file would be
-   worse than leaving it broken (untested, undocumented behavior bolted
-   onto the wrong layer) — so each is left as-is below with an inline FIX
-   comment pinpointing exactly what needs to consume it and where:
-
-     • double_loot        `doubleGoldOnQueenCapture`   — needs a gold-
-       MULTIPLIER hook in ChessEngine.executeMoveAndUpdate (today's gold
-       fields are purely additive: goldPerCapture, goldOnXCapture, goldOnWin).
-     • iron_will           `itemDropChance`             — needs a post-
-       capture roll in executeMoveAndUpdate that grants a random item.
-     • second_chance       `promoteOnCapture`           — needs pawn
-       promotion to trigger on ANY capture, not just reaching the last
-       rank; a new branch in ChessEngine.executeMove's promotion logic.
-     • cursed_gold         `goldLossPerMove`            — PARTIALLY dead:
-       its `goldOnWin` half works today; the "-10 gold per quiet move"
-       curse needs a per-half-move economy tick nobody currently runs.
-     • scroll_of_greed     `tripleGoldOnHeavyCapture`   — same multiplier
-       gap as double_loot, just a different trigger condition.
-     • experience_orb      `nextItemDiscount`           — shop-UI concept;
-       needs the shop screen (in app.js) to read a "next purchase" discount.
-     • merchants_ring      `shopDiscount`               — same: belongs to
-       the shop UI's price computation, not board/combat stats.
-     • kings_signet        `goldPerPiecePerTurn`        — needs a per-turn
-       (not per-capture) economy tick counting the king owner's live pieces.
-     • angelic_halo        `reviveHeavyOnWin`           — needs a full
-       piece-revival system (nothing currently removes-then-restores a
-       captured piece; captured pieces are simply gone).
-     • chaos_gem           `chaosEffect` / `chaosInterval` — needs a
-       turn-counter-driven random-effect dispatcher; no such system exists.
-     • soul_gem            `revivePawnOnCapture`        — same missing
-       revival-system dependency as angelic_halo.
-     • last_stand          `dodgeOnLastShield`          — needs the dodge
-       roll in ChessEngine.executeMove to check "is this the piece's last
-       shield charge?" and swap in a different (higher) chance for that case.
-
-   STATUS UPDATE (items-integrity pass): of the twelve, EIGHT are now
-   implemented as first-class mechanics with tests:
-     • doubleGoldOnQueenCapture / tripleGoldOnHeavyCapture / doubleGoldAll
-       — gold-multiplier stage in ChessEngine.executeMoveAndUpdate;
-     • goldLossPerMove — per-quiet-move negative goldEarned accrual
-       (consumer in app.js clamps the run total at zero);
-     • goldPerPiecePerTurn — per-move board-scan economy tick;
-     • promoteOnCapture — capture-triggered pawn promotion in executeMove;
-     • dodgeOnLastShield — last-shield-charge dodge override in both
-       dodge-roll sites (direct capture and en passant);
-     • itemDropChance — post-capture random-item roll in app.js's loot
-       path (economy layer, so the RNG never touches multiplayer sync);
-     • shopDiscount — effective-price computation in the shop UI.
-   The remaining FOUR (experience_orb, angelic_halo, soul_gem, chaos_gem)
-   need whole subsystems that don't exist; they are marked `disabled: true`
-   below and filtered out of every item pool until those systems land.
-   test-items-integrity.js enforces the invariant going forward: every
-   modifier key must either have a consumer in code or sit on a disabled
-   item.
+   AUDIT FINDING: cross-referencing every window.t('...') call in app.js/
+   editor.js and every data-i18n="..." attribute in the HTML against what's
+   actually defined here found FOUR keys used in the app but missing from
+   ALL THREE languages (menu.friend, piece.inv.empty, game.player.black,
+   game.player.opponent) — window.t() has nowhere to fall back to for these,
+   so it returns the raw key string, which appears verbatim in the UI. Two
+   of them (menu.friend, piece.inv.empty) have their intended Russian text
+   sitting right in the HTML as the pre-i18n fallback content — used as the
+   ru value here rather than guessed. All 109 pre-existing keys were
+   already perfectly symmetric across ru/en/es (no gaps) before this pass.
+   Also added gameover.text.repetition, needed by the chess-engine.js
+   threefold-repetition detection added in an earlier pass of this audit —
+   the UI had no text for it and would have fallen back to "insufficient
+   material", mislabeling the actual draw reason.
    ========================================================================= */
-
-const ITEMS_DB = {
-
-    // ============================
-    // 🏃 MOVEMENT (5 items)
-    // ============================
-
-    boots_of_speed: {
-        id: 'boots_of_speed',
-        name: { ru: 'Сапоги Скорости', en: "Boots of Speed", es: "Botas de Velocidad" },
-        description: { ru: '+1 к дальности хода (по прямой или диагонали).', en: "+1 Range to horizontal/vertical/diagonal moves.", es: "+1 Rango a movimientos horizontales/verticales/diagonales." },
-        icon: '👢',
-        rarity: 'common',
-        category: 'movement',
-        cost: 40,
-        tags: ['speed', 'range'],
-        allowedPieces: ['rook', 'bishop', 'queen'],
-        modifiers: { extraRange: 1 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    compass: {
-        id: 'compass',
-        name: { ru: "Компас", en: "Compass", es: "Brújula" },
-        description: { ru: "Слон может дополнительно ходить на 1 клетку по прямой.", en: "The Bishop can additionally move 1 square in a straight line.", es: "El Alfil puede moverse adicionalmente 1 casilla en línea recta." },
-        icon: '🧭',
-        rarity: 'common',
-        category: 'movement',
-        cost: 35,
-        tags: ['direction'],
-        allowedPieces: ['bishop'],
-        modifiers: {},
-        extraDirections: [[-1,0],[1,0],[0,-1],[0,1]],
-        extraKnightOffsets: [],
-    },
-
-    diagonal_slide: {
-        id: 'diagonal_slide',
-        name: { ru: "Диагональное скольжение", en: "Diagonal Slide", es: "Deslizamiento Diagonal" },
-        description: { ru: "Ладья может дополнительно ходить на 1 клетку по диагонали.", en: "The Rook can additionally move 1 square diagonally.", es: "La Torre puede moverse adicionalmente 1 casilla en diagonal." },
-        icon: '💠',
-        rarity: 'common',
-        category: 'movement',
-        cost: 35,
-        tags: ['direction'],
-        allowedPieces: ['rook'],
-        modifiers: {},
-        extraDirections: [[-1,-1],[-1,1],[1,-1],[1,1]],
-        extraKnightOffsets: [],
-    },
-
-    retreat: {
-        id: 'retreat',
-        name: { ru: "Отступление", en: "Retreat", es: "Retirada" },
-        description: { ru: "Пешка может ходить на 1 клетку назад.", en: "The Pawn can move 1 square backwards.", es: "El Peón puede moverse 1 casilla hacia atrás." },
-        icon: '🔙',
-        rarity: 'common',
-        category: 'movement',
-        cost: 30,
-        tags: ['pawn', 'direction'],
-        allowedPieces: ['pawn'],
-        modifiers: { pawnCanRetreat: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    horseshoe: {
-        id: 'horseshoe',
-        name: { ru: "Подкова", en: "Horseshoe", es: "Herradura" },
-        description: { ru: "Конь получает дополнительные прыжки: 3×1 (длинный Г).", en: "The Knight gains additional jumps: 3x1 (long L-shape).", es: "El Caballo obtiene saltos adicionales: 3x1 (forma de L larga)." },
-        icon: '🐴',
-        rarity: 'rare',
-        category: 'movement',
-        cost: 70,
-        tags: ['knight', 'jump'],
-        allowedPieces: ['knight'],
-        modifiers: {},
-        synergy: {
-            3: { modifiers: { moveAnywhere: true } }
-        },
-        extraDirections: [],
-        extraKnightOffsets: [[-3,-1],[-3,1],[3,-1],[3,1],[-1,-3],[-1,3],[1,-3],[1,3]],
-    },
-
-    // ============================
-    // 🗡 OFFENSE (5 items)
-    // ============================
-
-    sharp_blade: {
-        id: 'sharp_blade',
-        name: { ru: "Острый клинок", en: "Sharp Blade", es: "Cuchilla Afilada" },
-        description: { ru: "Скользящие фигуры получают +1 к дальности взятия.", en: "Sliding pieces gain +1 to capture range.", es: "Las piezas deslizantes obtienen +1 al rango de captura." },
-        icon: '⚔️',
-        rarity: 'common',
-        category: 'offense',
-        cost: 45,
-        tags: ['damage', 'range'],
-        allowedPieces: ['rook', 'bishop', 'queen'],
-        modifiers: { extraCaptureRange: 1 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    sniper_scope: {
-        id: 'sniper_scope',
-        name: { ru: "Снайперский прицел", en: "Sniper Scope", es: "Mira de Francotirador" },
-        description: { ru: "Пешка может брать фигуры на расстоянии 2 клеток по диагонали.", en: "The Pawn can capture pieces at a distance of 2 squares diagonally.", es: "El Peón puede capturar piezas a una distancia de 2 casillas en diagonal." },
-        icon: '🔭',
-        rarity: 'rare',
-        category: 'offense',
-        cost: 65,
-        tags: ['pawn', 'range'],
-        allowedPieces: ['pawn'],
-        modifiers: { pawnCaptureRange: 2 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    gold_tooth: {
-        id: 'gold_tooth',
-        name: { ru: "Золотой зуб", en: "Gold Tooth", es: "Diente de Oro" },
-        description: { ru: "+15 золота за каждое взятие этой фигурой.", en: "+15 gold for each capture by this piece.", es: "+15 de oro por cada captura de esta pieza." },
-        icon: '🦷',
-        rarity: 'common',
-        category: 'offense',
-        cost: 40,
-        tags: ['gold', 'economy'],
-        allowedPieces: ['all'],
-        modifiers: { goldPerCapture: 15 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    small_treasure_map: {
-        id: 'small_treasure_map',
-        name: { ru: "Потёртая карта", en: "Worn Treasure Map", es: "Mapa Gastado" },
-        description: { ru: "+50 золота за победу в раунде.", en: "+50 gold for winning the round.", es: "+50 de oro por ganar la ronda." },
-        icon: '🗺️',
-        rarity: 'common',
-        category: 'utility',
-        cost: 45,
-        tags: ['gold', 'economy'],
-        allowedPieces: ['all'],
-        modifiers: { goldOnWin: 50 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    promotion_scroll: {
-        id: 'promotion_scroll',
-        name: { ru: "Свиток превращения", en: "Promotion Scroll", es: "Pergamino de Coronación" },
-        description: { ru: "Пешка может превратиться уже на 6-м ряду (вместо 8-го).", en: "The Pawn can promote on the 6th rank (instead of the 8th).", es: "El Peón puede coronar en la 6ª fila (en lugar de la 8ª)." },
-        icon: '📜',
-        rarity: 'rare',
-        category: 'offense',
-        cost: 90,
-        tags: ['pawn', 'promotion'],
-        allowedPieces: ['pawn'],
-        modifiers: { earlyPromotion: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    // ============================
-    // 🛡 DEFENSE (3 items)
-    // ============================
-
-    wooden_shield: {
-        id: 'wooden_shield',
-        name: { ru: "Деревянный щит", en: "Wooden Shield", es: "Escudo de Madera" },
-        description: { ru: "Фигура выживает после первого взятия (одноразовый щит).", en: "The piece survives its first capture (one-time shield).", es: "La pieza sobrevive a su primera captura (escudo de un solo uso)." },
-        icon: '🛡️',
-        rarity: 'common',
-        category: 'defense',
-        cost: 50,
-        tags: ['shield', 'survival'],
-        allowedPieces: ['all'],
-        modifiers: { shield: 1 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    iron_armor: {
-        id: 'iron_armor',
-        name: { ru: 'Железная Броня', en: "Iron Armor", es: "Armadura de Hierro" },
-        description: { ru: 'Фигура получает иммунитет к атакам пешек.', en: "Piece cannot be captured by Pawns.", es: "La pieza no puede ser capturada por Peones." },
-        icon: '🪖',
-        rarity: 'rare',
-        category: 'defense',
-        cost: 75,
-        tags: ['armor', 'immunity'],
-        allowedPieces: ['all'],
-        modifiers: { immuneToPawns: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    evasion_cloak: {
-        id: 'evasion_cloak',
-        name: { ru: "Плащ уклонения", en: "Cloak of Evasion", es: "Capa de Evasión" },
-        description: { ru: "20% шанс уклониться от взятия.", en: "20% chance to evade a capture.", es: "20% de probabilidad de evadir una captura." },
-        icon: '🧥',
-        rarity: 'rare',
-        category: 'defense',
-        cost: 80,
-        tags: ['dodge', 'luck'],
-        allowedPieces: ['all'],
-        modifiers: { dodgeChance: 0.20 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    // ============================
-    // 🔮 SPECIAL (2 items)
-    // ============================
-
-    kings_crown: {
-        id: 'kings_crown',
-        name: { ru: "Корона короля", en: "King's Crown", es: "Corona del Rey" },
-        description: { ru: "Король получает возможность ходить как ферзь!", en: "The King gains the ability to move like a Queen!", es: "¡El Rey obtiene la habilidad de moverse como una Reina!" },
-        icon: '👑',
-        rarity: 'epic',
-        category: 'movement',
-        cost: 150,
-        tags: ['king', 'power'],
-        allowedPieces: ['king'],
-        modifiers: { moveAsQueen: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    wings: {
-        id: 'wings',
-        name: { ru: "Крылья", en: "Wings", es: "Alas" },
-        description: { ru: "Фигура может прыгать через другие фигуры (как конь).", en: "The piece can jump over other pieces (like a Knight).", es: "La pieza puede saltar sobre otras piezas (como un Caballo)." },
-        icon: '🪽',
-        rarity: 'epic',
-        category: 'movement',
-        cost: 120,
-        tags: ['jump', 'mobility'],
-        allowedPieces: ['rook', 'bishop', 'queen'],
-        modifiers: { canJump: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    // ============================
-    // 🆕 НОВЫЕ ПРЕДМЕТЫ
-    // ============================
-
-    magic_boots: {
-        id: 'magic_boots',
-        name: { ru: "Магические сапоги", en: "Magic Boots", es: "Botas Mágicas" },
-        description: { ru: "Фигура может ходить на 1 клетку в любом направлении (как король).", en: "The piece can move 1 square in any direction (like a King).", es: "La pieza puede moverse 1 casilla en cualquier dirección (como un Rey)." },
-        icon: '✨',
-        rarity: 'rare',
-        category: 'movement',
-        cost: 60,
-        tags: ['mobility', 'direction'],
-        allowedPieces: ['rook', 'bishop', 'knight', 'pawn'],
-        modifiers: { canStepAnyDirection: true },
-        extraDirections: [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]],
-        extraKnightOffsets: [],
-    },
-
-    shadow_step: {
-        id: 'shadow_step',
-        name: { ru: "Шаг тени", en: "Shadow Step", es: "Paso de Sombra" },
-        description: { ru: "Конь может переместиться на 2 клетки по прямой (как ладья на 2).", en: "The Knight can move 2 squares in a straight line (like a Rook for 2 squares).", es: "El Caballo puede moverse 2 casillas en línea recta (como una Torre por 2 casillas)." },
-        icon: '🌑',
-        rarity: 'rare',
-        category: 'movement',
-        cost: 55,
-        tags: ['knight', 'extra-move'],
-        allowedPieces: ['knight'],
-        modifiers: {},
-        extraDirections: [],
-        extraKnightOffsets: [[-2,0],[2,0],[0,-2],[0,2]],
-    },
-
-    fire_sword: {
-        id: 'fire_sword',
-        name: { ru: "Огненный меч", en: "Fire Sword", es: "Espada de Fuego" },
-        description: { ru: "+25 золота за каждое взятие. Огонь сжигает врагов!", en: "+25 gold for each capture. Fire burns the enemies!", es: "+25 de oro por cada captura. ¡El fuego quema a los enemigos!" },
-        icon: '🔥',
-        rarity: 'rare',
-        category: 'offense',
-        cost: 80,
-        tags: ['gold', 'economy', 'damage'],
-        allowedPieces: ['all'],
-        modifiers: { goldPerCapture: 25 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    poison_dart: {
-        id: 'poison_dart',
-        name: { ru: "Отравленная стрела", en: "Poison Dart", es: "Dardo Envenenado" },
-        description: { ru: "Пешка может атаковать прямо вперёд (не только по диагонали).", en: "The Pawn can attack straight forward (not just diagonally).", es: "El Peón puede atacar hacia adelante (no solo en diagonal)." },
-        icon: '🎯',
-        rarity: 'rare',
-        category: 'offense',
-        cost: 70,
-        tags: ['pawn', 'attack'],
-        allowedPieces: ['pawn'],
-        modifiers: { pawnCanCaptureForward: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    cursed_mirror: {
-        id: 'cursed_mirror',
-        name: { ru: "Проклятое зеркало", en: "Cursed Mirror", es: "Espejo Maldito" },
-        description: { ru: "Пешка может атаковать назад по диагонали.", en: "The Pawn can attack backwards diagonally.", es: "El Peón puede atacar hacia atrás en diagonal." },
-        icon: '🪞',
-        rarity: 'common',
-        category: 'offense',
-        cost: 35,
-        tags: ['pawn', 'direction'],
-        allowedPieces: ['pawn'],
-        modifiers: { pawnCanCaptureBackward: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    steel_shield: {
-        id: 'steel_shield',
-        name: { ru: "Стальной щит", en: "Steel Shield", es: "Escudo de Acero" },
-        description: { ru: "Фигура выживает после двух взятий (2 заряда щита).", en: "The piece survives two captures (2 shield charges).", es: "La pieza sobrevive a dos capturas (2 cargas de escudo)." },
-        icon: '🔰',
-        rarity: 'epic',
-        category: 'defense',
-        cost: 110,
-        tags: ['shield', 'survival'],
-        allowedPieces: ['all'],
-        modifiers: { shield: 2 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    thorns: {
-        id: 'thorns',
-        name: { ru: "Шипы", en: "Thorns", es: "Espinas" },
-        description: { ru: "Фигура не может быть взята конями.", en: "The piece cannot be captured by Knights.", es: "La pieza no puede ser capturada por Caballos." },
-        icon: '🌵',
-        rarity: 'common',
-        category: 'defense',
-        cost: 40,
-        tags: ['armor', 'immunity'],
-        allowedPieces: ['all'],
-        modifiers: { immuneToKnights: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    lucky_coin: {
-        id: 'lucky_coin',
-        name: { ru: "Счастливая монета", en: "Lucky Coin", es: "Moneda de la Suerte" },
-        description: { ru: "+100 золота за победу в раунде.", en: "+100 gold for winning the round.", es: "+100 de oro por ganar la ronda." },
-        icon: '🍀',
-        rarity: 'rare',
-        category: 'utility',
-        cost: 75,
-        tags: ['gold', 'economy'],
-        allowedPieces: ['all'],
-        modifiers: { goldOnWin: 100 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    phantom_cloak: {
-        id: 'phantom_cloak',
-        name: { ru: "Плащ призрака", en: "Phantom Cloak", es: "Capa Fantasma" },
-        description: { ru: "35% шанс уклониться от взятия. Редкое везение!", en: "35% chance to evade a capture. Rare luck!", es: "35% de probabilidad de evadir una captura. ¡Suerte rara!" },
-        icon: '👻',
-        rarity: 'epic',
-        category: 'defense',
-        cost: 130,
-        tags: ['dodge', 'luck'],
-        allowedPieces: ['all'],
-        modifiers: { dodgeChance: 0.35 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    queens_blessing: {
-        id: 'queens_blessing',
-        name: { ru: "Благословение королевы", en: "Queen's Blessing", es: "Bendición de la Reina" },
-        description: { ru: "Ладья получает ходы по диагонали и может скользить как слон.", en: "The Rook gains diagonal moves and can slide like a Bishop.", es: "La Torre obtiene movimientos en diagonal y puede deslizarse como un Alfil." },
-        icon: '💜',
-        rarity: 'legendary',
-        category: 'movement',
-        cost: 200,
-        tags: ['rook', 'direction', 'power'],
-        allowedPieces: ['rook'],
-        modifiers: {},
-        extraDirections: [[-1,-1],[-1,1],[1,-1],[1,1]],
-        extraKnightOffsets: [],
-    },
-
-    // ============================
-    // 🏃 MOVEMENT — расширение
-    // ============================
-
-    teleport_rune: {
-        id: 'teleport_rune',
-        name: { ru: "Руна телепорта", en: "Teleport Rune", es: "Runa de Teletransporte" },
-        description: { ru: "Фигура получает ход на 3 клетки в любом направлении.", en: "The piece gains a move of up to 3 squares in any direction.", es: "La pieza obtiene un movimiento de hasta 3 casillas en cualquier dirección." },
-        icon: '🔵',
-        rarity: 'epic',
-        category: 'movement',
-        cost: 140,
-        tags: ['teleport', 'mobility'],
-        allowedPieces: ['all'],
-        modifiers: { extraStep: 3 },
-        extraDirections: [[-3,0],[3,0],[0,-3],[0,3],[-3,-3],[-3,3],[3,-3],[3,3]],
-        extraKnightOffsets: [],
-    },
-
-    speed_rune: {
-        id: 'speed_rune',
-        name: { ru: "Руна ускорения", en: "Speed Rune", es: "Runa de Velocidad" },
-        description: { ru: "+2 к дальности хода скользящих фигур.", en: "+2 to the movement range of sliding pieces.", es: "+2 al rango de movimiento de las piezas deslizantes." },
-        icon: '⚡',
-        rarity: 'rare',
-        category: 'movement',
-        cost: 65,
-        tags: ['speed', 'range'],
-        allowedPieces: ['rook', 'queen'],
-        modifiers: { extraRange: 2 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    long_legs: {
-        id: 'long_legs',
-        name: { ru: "Длинные ноги", en: "Long Legs", es: "Piernas Largas" },
-        description: { ru: "Конь ходит по схеме 3+2 (вместо 2+1), большее покрытие.", en: "The Knight moves in a 3+2 pattern (instead of 2+1), greater coverage.", es: "El Caballo se mueve en un patrón de 3+2 (en lugar de 2+1), mayor cobertura." },
-        icon: '🦵',
-        rarity: 'common',
-        category: 'movement',
-        cost: 45,
-        tags: ['knight', 'range'],
-        allowedPieces: ['knight'],
-        modifiers: {},
-        extraDirections: [],
-        extraKnightOffsets: [[-3,-2],[-3,2],[3,-2],[3,2],[-2,-3],[-2,3],[2,-3],[2,3]],
-    },
-
-    diagonal_boots: {
-        id: 'diagonal_boots',
-        name: { ru: "Диагональные ботинки", en: "Diagonal Boots", es: "Botas Diagonales" },
-        description: { ru: "Ладья получает ход на 1 клетку по диагонали.", en: "The Rook gains a move of 1 square diagonally.", es: "La Torre obtiene un movimiento de 1 casilla en diagonal." },
-        icon: '👟',
-        rarity: 'common',
-        category: 'movement',
-        cost: 38,
-        tags: ['rook', 'direction'],
-        allowedPieces: ['rook'],
-        modifiers: {},
-        extraDirections: [[-1,-1],[-1,1],[1,-1],[1,1]],
-        extraKnightOffsets: [],
-    },
-
-    horse_legs: {
-        id: 'horse_legs',
-        name: { ru: "Конские ноги", en: "Horse Legs", es: "Patas de Caballo" },
-        description: { ru: "Пешка дополнительно может ходить как конь (Г-образно).", en: "The Pawn can additionally move like a Knight (L-shape).", es: "El Peón puede moverse adicionalmente como un Caballo (en forma de L)." },
-        icon: '🐎',
-        rarity: 'rare',
-        category: 'movement',
-        cost: 70,
-        tags: ['pawn', 'knight'],
-        allowedPieces: ['pawn'],
-        modifiers: {},
-        extraDirections: [],
-        extraKnightOffsets: [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]],
-    },
-
-    sprinter_scroll: {
-        id: 'sprinter_scroll',
-        name: { ru: "Свиток спринтера", en: "Sprinter Scroll", es: "Pergamino de Velocista" },
-        description: { ru: "Пешка всегда может двигаться на 2 клетки вперёд (не только с исходной позиции).", en: "The Pawn can always move 2 squares forward (not just from the starting position).", es: "El Peón siempre puede moverse 2 casillas hacia adelante (no solo desde la posición inicial)." },
-        icon: '📋',
-        rarity: 'common',
-        category: 'movement',
-        cost: 30,
-        tags: ['pawn', 'speed'],
-        allowedPieces: ['pawn'],
-        modifiers: { pawnAlwaysDouble: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    crab_claws: {
-        id: 'crab_claws',
-        name: { ru: "Клешни краба", en: "Crab Claws", es: "Pinzas de Cangrejo" },
-        description: { ru: "Ладья получает прыжки на 2 клетки вбок (горизонтальный конь).", en: "The Rook gains 2-square horizontal jumps (horizontal Knight).", es: "La Torre obtiene saltos de 2 casillas hacia los lados (Caballo horizontal)." },
-        icon: '🦀',
-        rarity: 'rare',
-        category: 'movement',
-        cost: 60,
-        tags: ['rook', 'jump'],
-        allowedPieces: ['rook', 'queen'],
-        modifiers: {},
-        extraDirections: [],
-        extraKnightOffsets: [[-1,-2],[-1,2],[1,-2],[1,2]],
-    },
-
-    moonwalk: {
-        id: 'moonwalk',
-        name: { ru: "Лунная походка", en: "Moonwalk", es: "Paso Lunar" },
-        description: { ru: "Ладья получает возможность ходить назад по диагонали на 2 клетки.", en: "The Rook gains the ability to move backwards diagonally by 2 squares.", es: "La Torre obtiene la habilidad de moverse hacia atrás en diagonal 2 casillas." },
-        icon: '🌙',
-        rarity: 'epic',
-        category: 'movement',
-        cost: 100,
-        tags: ['rook', 'diagonal'],
-        allowedPieces: ['rook'],
-        modifiers: {},
-        extraDirections: [[2,-2],[2,2]],
-        extraKnightOffsets: [],
-    },
-
-    spiral_path: {
-        id: 'spiral_path',
-        name: { ru: "Спиральный путь", en: "Spiral Path", es: "Camino en Espiral" },
-        description: { ru: "Слон может дополнительно двигаться на 1 клетку по прямой.", en: "The Bishop can additionally move 1 square in a straight line.", es: "El Alfil puede moverse adicionalmente 1 casilla en línea recta." },
-        icon: '🌀',
-        rarity: 'rare',
-        category: 'movement',
-        cost: 75,
-        tags: ['bishop', 'straight'],
-        allowedPieces: ['bishop'],
-        modifiers: {},
-        extraDirections: [[-1,0],[1,0],[0,-1],[0,1]],
-        extraKnightOffsets: [],
-    },
-
-    mirror_step: {
-        id: 'mirror_step',
-        name: { ru: "Зеркальный шаг", en: "Mirror Step", es: "Paso Espejo" },
-        description: { ru: "Конь получает дополнительные зеркальные прыжки [-1,2] и [1,-2].", en: "The Knight gains additional mirror jumps [-1,2] and [1,-2].", es: "El Caballo obtiene saltos espejo adicionales [-1,2] y [1,-2]." },
-        icon: '🔀',
-        rarity: 'rare',
-        category: 'movement',
-        cost: 65,
-        tags: ['knight', 'extra'],
-        allowedPieces: ['knight'],
-        modifiers: {},
-        extraDirections: [],
-        extraKnightOffsets: [[-1,-2],[-1,2],[1,-2],[1,2],[-2,-1],[-2,1],[2,-1],[2,1]],
-    },
-
-    sidewinder: {
-        id: 'sidewinder',
-        name: { ru: "Боковой ход", en: "Sidewinder", es: "Movimiento Lateral" },
-        description: { ru: "Пешка может ходить на 1 клетку вбок (без взятия).", en: "The Pawn can move 1 square horizontally (without capturing).", es: "El Peón puede moverse 1 casilla horizontalmente (sin capturar)." },
-        icon: '↔️',
-        rarity: 'common',
-        category: 'movement',
-        cost: 40,
-        tags: ['pawn', 'lateral'],
-        allowedPieces: ['pawn'],
-        modifiers: {},
-        extraDirections: [[0,-1],[0,1]],
-        extraKnightOffsets: [],
-    },
-
-    octopus_arms: {
-        id: 'octopus_arms',
-        name: { ru: "Щупальца осьминога", en: "Octopus Arms", es: "Tentáculos de Pulpo" },
-        description: { ru: "Слон получает прямые направления хода (становится ферзём по возможностям).", en: "The Bishop gains straight movement directions (becomes a Queen in capabilities).", es: "El Alfil obtiene direcciones de movimiento rectas (se convierte en una Reina en capacidades)." },
-        icon: '🐙',
-        rarity: 'epic',
-        category: 'movement',
-        cost: 130,
-        tags: ['bishop', 'direction'],
-        allowedPieces: ['bishop'],
-        modifiers: {},
-        extraDirections: [[-1,0],[1,0],[0,-1],[0,1]],
-        extraKnightOffsets: [],
-    },
-
-    tunnel_drill: {
-        id: 'tunnel_drill',
-        name: { ru: "Буровой снаряд", en: "Tunnel Drill", es: "Taladro de Túnel" },
-        description: { ru: "Ладья может игнорировать одну фигуру на пути.", en: "The Rook can ignore one piece in its path.", es: "La Torre puede ignorar una pieza en su camino." },
-        icon: '⛏️',
-        rarity: 'rare',
-        category: 'movement',
-        cost: 70,
-        tags: ['rook', 'pierce'],
-        allowedPieces: ['rook'],
-        modifiers: { pierceOne: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    cape_of_wind: {
-        id: 'cape_of_wind',
-        name: { ru: "Плащ ветра", en: "Cape of Wind", es: "Capa de Viento" },
-        description: { ru: "Фигура получает шаг на 1 клетку в любом направлении.", en: "The piece gains a 1-square step in any direction.", es: "La pieza obtiene un paso de 1 casilla en cualquier dirección." },
-        icon: '🌬️',
-        rarity: 'common',
-        category: 'movement',
-        cost: 30,
-        tags: ['mobility'],
-        allowedPieces: ['rook', 'bishop', 'pawn'],
-        modifiers: {},
-        extraDirections: [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]],
-        extraKnightOffsets: [],
-    },
-
-    jetpack: {
-        id: 'jetpack',
-        name: { ru: "Реактивный ранец", en: "Jetpack", es: "Mochila Propulsora" },
-        description: { ru: "Пешка может двигаться до 4 клеток вперёд.", en: "The Pawn can move up to 4 squares forward.", es: "El Peón puede moverse hasta 4 casillas hacia adelante." },
-        icon: '🚀',
-        rarity: 'legendary',
-        category: 'movement',
-        cost: 180,
-        tags: ['pawn', 'range'],
-        allowedPieces: ['pawn'],
-        modifiers: { pawnExtraForward: 3 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    // ============================
-    // ⚔️ OFFENSE — новые
-    // ============================
-
-    snipers_scope: {
-        id: 'snipers_scope',
-        name: { ru: "Прицел снайпера", en: "Sniper's Scope", es: "Mira de Francotirador" },
-        description: { ru: "+50 золота за взятие с дистанции 3+ клетки.", en: "+50 gold for capturing from a distance of 3+ squares.", es: "+50 de oro por capturar desde una distancia de más de 3 casillas." },
-        icon: '🎯',
-        rarity: 'epic',
-        category: 'offense',
-        cost: 110,
-        tags: ['gold', 'distance'],
-        allowedPieces: ['rook', 'queen'],
-        modifiers: { goldOnLongCapture: 50 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    assassin_blade: {
-        id: 'assassin_blade',
-        name: { ru: "Клинок убийцы", en: "Assassin's Blade", es: "Cuchilla de Asesino" },
-        description: { ru: "+30 золота за взятие фигур противника конём.", en: "+30 gold for capturing opponent's pieces with a Knight.", es: "+30 de oro por capturar piezas del oponente con un Caballo." },
-        icon: '🗡️',
-        rarity: 'rare',
-        category: 'offense',
-        cost: 90,
-        tags: ['knight', 'gold'],
-        allowedPieces: ['knight'],
-        modifiers: { goldPerCapture: 30 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    battle_axe: {
-        id: 'battle_axe',
-        name: { ru: "Боевой топор", en: "Battle Axe", es: "Hacha de Batalla" },
-        description: { ru: "Фигура может атаковать на 1 клетку по диагонали (дополнительно).", en: "The piece can attack 1 square diagonally (additionally).", es: "La pieza puede atacar 1 casilla en diagonal (adicionalmente)." },
-        icon: '🪓',
-        rarity: 'rare',
-        category: 'offense',
-        cost: 75,
-        tags: ['diagonal', 'attack'],
-        allowedPieces: ['rook', 'knight'],
-        modifiers: {},
-        extraDirections: [[-1,-1],[-1,1],[1,-1],[1,1]],
-        extraKnightOffsets: [],
-    },
-
-    venom_fang: {
-        id: 'venom_fang',
-        name: { ru: "Ядовитый клык", en: "Venom Fang", es: "Colmillo Venenoso" },
-        description: { ru: "+10 золота за каждое взятие.", en: "+10 gold for each capture.", es: "+10 de oro por cada captura." },
-        icon: '🐍',
-        rarity: 'common',
-        category: 'offense',
-        cost: 45,
-        tags: ['gold', 'economy'],
-        allowedPieces: ['all'],
-        modifiers: { goldPerCapture: 10 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    war_drum: {
-        id: 'war_drum',
-        name: { ru: "Военный барабан", en: "War Drum", es: "Tambor de Guerra" },
-        description: { ru: "+5 золота за каждый ход с взятием.", en: "+5 gold for each move with a capture.", es: "+5 de oro por cada movimiento con una captura." },
-        icon: '🥁',
-        rarity: 'common',
-        category: 'offense',
-        cost: 30,
-        tags: ['gold', 'capture'],
-        allowedPieces: ['all'],
-        modifiers: { goldPerCapture: 5 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    burning_bow: {
-        id: 'burning_bow',
-        name: { ru: "Горящий лук", en: "Burning Bow", es: "Arco Ardiente" },
-        description: { ru: "Слон может атаковать по прямой на 1 клетку.", en: "The Bishop can attack in a straight line for 1 square.", es: "El Alfil puede atacar en línea recta por 1 casilla." },
-        icon: '🏹',
-        rarity: 'rare',
-        category: 'offense',
-        cost: 65,
-        tags: ['bishop', 'straight'],
-        allowedPieces: ['bishop'],
-        modifiers: {},
-        extraDirections: [[-1,0],[1,0],[0,-1],[0,1]],
-        extraKnightOffsets: [],
-    },
-
-    spike_trap: {
-        id: 'spike_trap',
-        name: { ru: "Шипованная ловушка", en: "Spike Trap", es: "Trampa de Picos" },
-        description: { ru: "Пешка получает +15 золота за взятие.", en: "The Pawn gains +15 gold per capture.", es: "El Peón obtiene +15 de oro por captura." },
-        icon: '⚙️',
-        rarity: 'common',
-        category: 'offense',
-        cost: 40,
-        tags: ['pawn', 'gold'],
-        allowedPieces: ['pawn'],
-        modifiers: { goldPerCapture: 15 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    executioners_axe: {
-        id: 'executioners_axe',
-        name: { ru: "Топор палача", en: "Executioner's Axe", es: "Hacha de Verdugo" },
-        description: { ru: "+100 золота за взятие ферзя.", en: "+100 gold for capturing a Queen.", es: "+100 de oro por capturar una Reina." },
-        icon: '⚔️',
-        rarity: 'epic',
-        category: 'offense',
-        cost: 115,
-        tags: ['gold', 'queen-killer'],
-        allowedPieces: ['all'],
-        modifiers: { goldOnQueenCapture: 100 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    hunters_mark: {
-        id: 'hunters_mark',
-        name: { ru: "Метка охотника", en: "Hunter's Mark", es: "Marca de Cazador" },
-        description: { ru: "+20 золота за взятие коня.", en: "+20 gold for capturing a Knight.", es: "+20 de oro por capturar un Caballo." },
-        icon: '🏹',
-        rarity: 'common',
-        category: 'offense',
-        cost: 50,
-        tags: ['gold', 'knight-killer'],
-        allowedPieces: ['all'],
-        modifiers: { goldOnKnightCapture: 20 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    battle_cry: {
-        id: 'battle_cry',
-        name: { ru: "Боевой клич", en: "Battle Cry", es: "Grito de Batalla" },
-        description: { ru: "+15 золота за взятие ладьи.", en: "+15 gold for capturing a Rook.", es: "+15 de oro por capturar una Torre." },
-        icon: '📯',
-        rarity: 'common',
-        category: 'offense',
-        cost: 35,
-        tags: ['gold', 'rook-killer'],
-        allowedPieces: ['all'],
-        modifiers: { goldOnRookCapture: 15 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    rune_of_power: {
-        id: 'rune_of_power',
-        name: { ru: "Руна силы", en: "Rune of Power", es: "Runa de Poder" },
-        description: { ru: "Взятие тяжёлой фигуры даёт +2 заряда щита.", en: "Capturing a major piece grants +2 shield charges.", es: "Capturar una pieza mayor otorga +2 cargas de escudo." },
-        icon: '💪',
-        rarity: 'rare',
-        category: 'offense',
-        cost: 90,
-        tags: ['shield', 'capture'],
-        allowedPieces: ['all'],
-        modifiers: { shieldOnHeavyCapture: 2 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    mirror_strike: {
-        id: 'mirror_strike',
-        name: { ru: "Удар отражения", en: "Mirror Strike", es: "Golpe Espejo" },
-        description: { ru: "Слон может атаковать прямо на 2 клетки.", en: "The Bishop can attack straight ahead for 2 squares.", es: "El Alfil puede atacar en línea recta por 2 casillas." },
-        icon: '🌊',
-        rarity: 'epic',
-        category: 'offense',
-        cost: 120,
-        tags: ['bishop', 'long-range'],
-        allowedPieces: ['bishop'],
-        modifiers: {},
-        extraDirections: [[-2,0],[2,0],[0,-2],[0,2]],
-        extraKnightOffsets: [],
-    },
-
-    // ============================
-    // 🛡️ DEFENSE — новые
-    // ============================
-
-    guardian_rune: {
-        id: 'guardian_rune',
-        name: { ru: "Руна стража", en: "Guardian Rune", es: "Runa de Guardián" },
-        description: { ru: "Фигура не может быть взята слонами.", en: "The piece cannot be captured by Bishops.", es: "La pieza no puede ser capturada por Alfiles." },
-        icon: '🔮',
-        rarity: 'common',
-        category: 'defense',
-        cost: 45,
-        tags: ['armor', 'immunity'],
-        allowedPieces: ['all'],
-        modifiers: { immuneToBishops: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    stone_skin: {
-        id: 'stone_skin',
-        name: { ru: "Каменная кожа", en: "Stone Skin", es: "Piel de Piedra" },
-        description: { ru: "30% шанс уклониться от взятия.", en: "30% chance to evade a capture.", es: "30% de probabilidad de evadir una captura." },
-        icon: '🪨',
-        rarity: 'rare',
-        category: 'defense',
-        cost: 70,
-        tags: ['dodge', 'defense'],
-        allowedPieces: ['pawn', 'rook'],
-        modifiers: { dodgeChance: 0.30 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    divine_shield: {
-        id: 'divine_shield',
-        name: { ru: "Божественный щит", en: "Divine Shield", es: "Escudo Divino" },
-        description: { ru: "3 заряда щита + 25% шанс уклонения.", en: "3 shield charges + 25% chance of evasion.", es: "3 cargas de escudo + 25% de probabilidad de evasión." },
-        icon: '✨',
-        rarity: 'legendary',
-        category: 'defense',
-        cost: 250,
-        tags: ['shield', 'dodge'],
-        allowedPieces: ['all'],
-        modifiers: { shield: 3, dodgeChance: 0.25 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    titanium_plate: {
-        id: 'titanium_plate',
-        name: { ru: "Титановая плита", en: "Titanium Plate", es: "Placa de Titanio" },
-        description: { ru: "Иммунитет к коням и пешкам.", en: "Immunity to Knights and Pawns.", es: "Inmunidad a Caballos y Peones." },
-        icon: '🏗️',
-        rarity: 'legendary',
-        category: 'defense',
-        cost: 190,
-        tags: ['armor', 'immunity'],
-        allowedPieces: ['rook', 'queen'],
-        modifiers: { immuneToKnights: true, immuneToPawns: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    holy_water: {
-        id: 'holy_water',
-        name: { ru: "Святая вода", en: "Holy Water", es: "Agua Bendita" },
-        description: { ru: "Фигура получает 1 заряд щита.", en: "The piece gains 1 shield charge.", es: "La pieza obtiene 1 carga de escudo." },
-        icon: '💧',
-        rarity: 'common',
-        category: 'defense',
-        cost: 35,
-        tags: ['shield'],
-        allowedPieces: ['all'],
-        modifiers: { shield: 1 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    reflective_coat: {
-        id: 'reflective_coat',
-        name: { ru: "Отражающее покрытие", en: "Reflective Coat", es: "Abrigo Reflectante" },
-        description: { ru: "Фигура не может быть взята ладьями.", en: "The piece cannot be captured by Rooks.", es: "La pieza no puede ser capturada por Torres." },
-        icon: '🪞',
-        rarity: 'rare',
-        category: 'defense',
-        cost: 85,
-        tags: ['armor', 'immunity'],
-        allowedPieces: ['all'],
-        modifiers: { immuneToRooks: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    silk_robe: {
-        id: 'silk_robe',
-        name: { ru: "Шёлковый халат", en: "Silk Robe", es: "Túnica de Seda" },
-        description: { ru: "15% шанс уклониться от взятия.", en: "15% chance to evade a capture.", es: "15% de probabilidad de evadir una captura." },
-        icon: '👘',
-        rarity: 'common',
-        category: 'defense',
-        cost: 40,
-        tags: ['dodge'],
-        allowedPieces: ['queen', 'bishop'],
-        modifiers: { dodgeChance: 0.15 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    fire_resistance: {
-        id: 'fire_resistance',
-        name: { ru: "Огнестойкость", en: "Fire Resistance", es: "Resistencia al Fuego" },
-        description: { ru: "Фигура не может быть взята ферзями.", en: "The piece cannot be captured by Queens.", es: "La pieza no puede ser capturada por Reinas." },
-        icon: '🔥',
-        rarity: 'rare',
-        category: 'defense',
-        cost: 75,
-        tags: ['armor', 'immunity'],
-        allowedPieces: ['all'],
-        modifiers: { immuneToQueens: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    absorb_rune: {
-        id: 'absorb_rune',
-        name: { ru: "Руна поглощения", en: "Absorb Rune", es: "Runa de Absorción" },
-        description: { ru: "При взятии этой фигуры: +50 золота.", en: "When this piece is captured: +50 gold.", es: "Cuando esta pieza es capturada: +50 de oro." },
-        icon: '💡',
-        rarity: 'epic',
-        category: 'defense',
-        cost: 115,
-        tags: ['gold', 'sacrifice'],
-        allowedPieces: ['all'],
-        modifiers: { goldOnCaptured: 50 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    last_stand: {
-        id: 'last_stand',
-        name: { ru: "Последний рубеж", en: "Last Stand", es: "Última Batalla" },
-        description: { ru: "При 1 заряде щита: 60% шанс уклонения.", en: "With 1 shield charge remaining: 60% chance of evasion.", es: "Con 1 carga de escudo restante: 60% de probabilidad de evasión." },
-        icon: '🗡️',
-        rarity: 'legendary',
-        category: 'defense',
-        cost: 200,
-        tags: ['dodge', 'shield', 'last-chance'],
-        allowedPieces: ['all'],
-        modifiers: { dodgeOnLastShield: 0.60 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    reinforced_armor: {
-        id: 'reinforced_armor',
-        name: { ru: "Усиленная броня", en: "Reinforced Armor", es: "Armadura Reforzada" },
-        description: { ru: "Ладья не может быть взята слонами.", en: "The Rook cannot be captured by Bishops.", es: "La Torre no puede ser capturada por Alfiles." },
-        icon: '🛡️',
-        rarity: 'common',
-        category: 'defense',
-        cost: 55,
-        tags: ['armor', 'immunity'],
-        allowedPieces: ['rook'],
-        modifiers: { immuneToBishops: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    mirror_armor: {
-        id: 'mirror_armor',
-        name: { ru: "Зеркальная броня", en: "Mirror Armor", es: "Armadura Espejo" },
-        description: { ru: "50% шанс уклонения, но -1 к дальности хода.", en: "50% chance of evasion, but -1 to movement range.", es: "50% de probabilidad de evasión, pero -1 al rango de movimiento." },
-        icon: '⚡',
-        rarity: 'epic',
-        category: 'defense',
-        cost: 120,
-        tags: ['dodge', 'penalty'],
-        allowedPieces: ['all'],
-        modifiers: { dodgeChance: 0.50, extraRange: -1 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    // ============================
-    // 🔮 UTILITY — новые
-    // ============================
-
-    gold_ore: {
-        id: 'gold_ore',
-        name: { ru: "Золотой самородок", en: "Gold Nugget", es: "Pepita de Oro" },
-        description: { ru: "+50 золота за победу в раунде.", en: "+50 gold for winning the round.", es: "+50 de oro por ganar la ronda." },
-        icon: '🪙',
-        rarity: 'common',
-        category: 'utility',
-        cost: 40,
-        tags: ['gold', 'economy'],
-        allowedPieces: ['all'],
-        modifiers: { goldOnWin: 50 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    treasure_map: {
-        id: 'treasure_map',
-        name: { ru: "Карта сокровищ", en: "Treasure Map", es: "Mapa del Tesoro" },
-        description: { ru: "+150 золота за победу в раунде.", en: "+150 gold for winning the round.", es: "+150 de oro por ganar la ronda." },
-        icon: '🗺️',
-        rarity: 'rare',
-        category: 'utility',
-        cost: 80,
-        tags: ['gold', 'economy'],
-        allowedPieces: ['all'],
-        modifiers: { goldOnWin: 150 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    gem_collector: {
-        id: 'gem_collector',
-        name: { ru: "Сборщик самоцветов", en: "Gem Collector", es: "Coleccionista de Gemas" },
-        description: { ru: "+20 золота за взятие слона.", en: "+20 gold for capturing a Bishop.", es: "+20 de oro por capturar un Alfil." },
-        icon: '💎',
-        rarity: 'common',
-        category: 'utility',
-        cost: 45,
-        tags: ['gold', 'bishop-killer'],
-        allowedPieces: ['all'],
-        modifiers: { goldOnBishopCapture: 20 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    royal_treasury: {
-        id: 'royal_treasury',
-        name: { ru: "Королевская казна", en: "Royal Treasury", es: "Tesorería Real" },
-        description: { ru: "+300 золота за победу в раунде!", en: "+300 gold for winning the round!", es: "¡+300 de oro por ganar la ronda!" },
-        icon: '🏦',
-        rarity: 'legendary',
-        category: 'utility',
-        cost: 200,
-        tags: ['gold', 'economy'],
-        allowedPieces: ['all'],
-        modifiers: { goldOnWin: 300 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    double_loot: {
-        id: 'double_loot',
-        name: { ru: "Двойная добыча", en: "Double Loot", es: "Doble Botín" },
-        description: { ru: "Вдвое больше золота за взятие ферзя.", en: "Double gold for capturing a Queen.", es: "Doble de oro por capturar una Reina." },
-        icon: '💰',
-        rarity: 'rare',
-        category: 'utility',
-        cost: 95,
-        tags: ['gold', 'queen-killer'],
-        allowedPieces: ['all'],
-        modifiers: { doubleGoldOnQueenCapture: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    bounty_hunter: {
-        id: 'bounty_hunter',
-        name: { ru: "Охотник за наградой", en: "Bounty Hunter", es: "Cazarrecompensas" },
-        description: { ru: "+30 золота за взятие ладьи.", en: "+30 gold for capturing a Rook.", es: "+30 de oro por capturar una Torre." },
-        icon: '🎖️',
-        rarity: 'rare',
-        category: 'utility',
-        cost: 80,
-        tags: ['gold', 'rook-killer'],
-        allowedPieces: ['all'],
-        modifiers: { goldOnRookCapture: 30 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    iron_will: {
-        id: 'iron_will',
-        name: { ru: "Железная воля", en: "Iron Will", es: "Voluntad de Hierro" },
-        description: { ru: "10% шанс получить случайный предмет после взятия.", en: "10% chance to receive a random item after a capture.", es: "10% de probabilidad de recibir un objeto aleatorio después de una captura." },
-        icon: '💪',
-        rarity: 'common',
-        category: 'utility',
-        cost: 50,
-        tags: ['chance', 'item'],
-        allowedPieces: ['all'],
-        modifiers: { itemDropChance: 0.10 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    second_chance: {
-        id: 'second_chance',
-        name: { ru: "Второй шанс", en: "Second Chance", es: "Segunda Oportunidad" },
-        description: { ru: "Пешка может превратиться в любую фигуру при взятии.", en: "The Pawn can promote to any piece upon capture.", es: "El Peón puede coronar a cualquier pieza al capturar." },
-        icon: '🔄',
-        rarity: 'epic',
-        category: 'utility',
-        cost: 125,
-        tags: ['pawn', 'promotion'],
-        allowedPieces: ['pawn'],
-        modifiers: { promoteOnCapture: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    cursed_gold: {
-        id: 'cursed_gold',
-        name: { ru: "Проклятое золото", en: "Cursed Gold", es: "Oro Maldito" },
-        description: { ru: "+200 золота за победу, -10 зол. за каждый ход без взятия.", en: "+200 gold for winning, -10 gold for each move without a capture.", es: "+200 de oro por ganar, -10 de oro por cada movimiento sin captura." },
-        icon: '☠️',
-        rarity: 'rare',
-        category: 'utility',
-        cost: 65,
-        tags: ['gold', 'curse'],
-        allowedPieces: ['all'],
-        modifiers: { goldOnWin: 200, goldLossPerMove: 10 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    scroll_of_greed: {
-        id: 'scroll_of_greed',
-        name: { ru: "Свиток жадности", en: "Scroll of Greed", es: "Pergamino de Avaricia" },
-        description: { ru: "x3 золото за взятие тяжёлых фигур (ладья/ферзь).", en: "x3 gold for capturing major pieces (Rook/Queen).", es: "x3 de oro por capturar piezas mayores (Torre/Reina)." },
-        icon: '📜',
-        rarity: 'epic',
-        category: 'utility',
-        cost: 140,
-        tags: ['gold', 'heavy-killer'],
-        allowedPieces: ['rook', 'queen'],
-        modifiers: { tripleGoldOnHeavyCapture: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    experience_orb: {
-        // DISABLED: excluded from all item pools (shop, random loot,
-        // creative catalog) until its mechanic is actually implemented —
-        // selling a legendary that does nothing is worse than not
-        // selling it. Needs: one-shot "next purchase" discount state (and its economy is
-        // incoherent: cost 35 for a -20 one-time discount is a guaranteed
-        // net loss — needs a redesign, not just a hook).
-        // getItemById() still resolves it, so old saves / encounter
-        // references stay valid instead of crashing.
-        disabled: true,
-        id: 'experience_orb',
-        name: { ru: "Шар опыта", en: "Experience Orb", es: "Orbe de Experiencia" },
-        description: { ru: "Следующий предмет в магазине стоит -20 золота.", en: "The next item in the shop costs -20 gold.", es: "El siguiente objeto en la tienda cuesta -20 de oro." },
-        icon: '🔮',
-        rarity: 'common',
-        category: 'utility',
-        cost: 35,
-        tags: ['discount', 'economy'],
-        allowedPieces: ['all'],
-        modifiers: { nextItemDiscount: 20 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    merchants_ring: {
-        id: 'merchants_ring',
-        name: { ru: "Перстень купца", en: "Merchant's Ring", es: "Anillo de Comerciante" },
-        description: { ru: "-15% стоимость всех предметов в магазине.", en: "-15% to the cost of all items in the shop.", es: "-15% al costo de todos los objetos en la tienda." },
-        icon: '💍',
-        rarity: 'rare',
-        category: 'utility',
-        cost: 70,
-        tags: ['discount', 'economy'],
-        allowedPieces: ['all'],
-        modifiers: { shopDiscount: 0.15 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    kings_signet: {
-        id: 'kings_signet',
-        name: { ru: "Перстень короля", en: "King's Signet", es: "Sello del Rey" },
-        description: { ru: "Каждая ваша фигура на поле даёт +5 золота за ход.", en: "Each of your pieces on the board gives +5 gold per turn.", es: "Cada una de tus piezas en el tablero da +5 de oro por turno." },
-        icon: '👑',
-        rarity: 'legendary',
-        category: 'utility',
-        cost: 220,
-        tags: ['gold', 'passive'],
-        allowedPieces: ['king'],
-        modifiers: { goldPerPiecePerTurn: 5 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    // ============================
-    // 🌟 SPECIAL / LEGENDARY
-    // ============================
-
-    star_map: {
-        id: 'star_map',
-        name: { ru: 'Звездная Карта', en: "Star Map", es: "Mapa Estelar" },
-        description: { ru: 'Позволяет фигуре ходить как Конь.', en: "Allows piece to move as a Knight.", es: "Permite que la pieza se mueva como un Caballo." },
-        icon: '⭐',
-        rarity: 'legendary',
-        category: 'movement',
-        cost: 240,
-        tags: ['queen', 'knight', 'power'],
-        allowedPieces: ['queen'],
-        modifiers: {},
-        extraDirections: [],
-        extraKnightOffsets: [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]],
-    },
-
-    soul_gem: {
-        // DISABLED: excluded from all item pools (shop, random loot,
-        // creative catalog) until its mechanic is actually implemented —
-        // selling a legendary that does nothing is worse than not
-        // selling it. Needs: a mid-game piece-revival system (placement rules, undo
-        // support, MP outcome-sync) that does not exist yet.
-        // getItemById() still resolves it, so old saves / encounter
-        // references stay valid instead of crashing.
-        disabled: true,
-        id: 'soul_gem',
-        name: { ru: 'Камень Души', en: "Soul Gem", es: "Gema del Alma" },
-        description: { ru: 'При взятии случайная мертвая дружественная фигура возрождается.', en: "When piece captures, revives a random friendly piece.", es: "Cuando la pieza captura, revive una pieza aliada al azar." },
-        icon: '🔵',
-        rarity: 'legendary',
-        category: 'utility',
-        cost: 260,
-        tags: ['revival', 'pawn', 'special'],
-        allowedPieces: ['all'],
-        modifiers: { revivePawnOnCapture: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    demonic_pact: {
-        id: 'demonic_pact',
-        name: { ru: 'Демонический Пакт', en: "Demonic Pact", es: "Pacto Demoníaco" },
-        description: { ru: 'Золото x2, но вычитается 1 щит.', en: "x2 Gold gained, but shield gets -1 penalty.", es: "x2 de Oro ganado, pero el escudo recibe penalización de -1." },
-        icon: '😈',
-        rarity: 'legendary',
-        category: 'utility',
-        cost: 300,
-        tags: ['gold', 'penalty', 'double'],
-        allowedPieces: ['all'],
-        // FIX: `shieldPenalty` had zero consumers (dead — the drawback
-        // never applied). The engine already aggregates negative numeric
-        // `shield` modifiers correctly (same pattern as mirror_armor's
-        // `extraRange: -1`), so expressing the penalty this way makes it
-        // real. `doubleGoldAll` still needs an engine hook — see the file
-        // header for exactly what that requires; not silently invented here.
-        modifiers: { doubleGoldAll: true, shield: -1 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    angelic_halo: {
-        // DISABLED: excluded from all item pools (shop, random loot,
-        // creative catalog) until its mechanic is actually implemented —
-        // selling a legendary that does nothing is worse than not
-        // selling it. Needs: a piece-revival system; also conceptually dead in the current
-        // run flow — armies are rebuilt from scratch every round, so
-        // "revive on win" has nothing to restore.
-        // getItemById() still resolves it, so old saves / encounter
-        // references stay valid instead of crashing.
-        disabled: true,
-        id: 'angelic_halo',
-        name: { ru: 'Ангельский Нимб', en: "Angelic Halo", es: "Halo Angelical" },
-        description: { ru: 'Возрождает фигуру один раз после смерти.', en: "Revives the piece once after dying.", es: "Revive a la pieza una vez después de morir." },
-        icon: '😇',
-        rarity: 'legendary',
-        category: 'defense',
-        cost: 270,
-        tags: ['revival', 'special'],
-        allowedPieces: ['all'],
-        modifiers: { reviveHeavyOnWin: true },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    chaos_gem: {
-        // DISABLED: excluded from all item pools (shop, random loot,
-        // creative catalog) until its mechanic is actually implemented —
-        // selling a legendary that does nothing is worse than not
-        // selling it. Needs: a turn-counter-driven random-effect dispatcher that does
-        // not exist yet.
-        // getItemById() still resolves it, so old saves / encounter
-        // references stay valid instead of crashing.
-        disabled: true,
-        id: 'chaos_gem',
-        name: { ru: 'Камень Хаоса', en: "Chaos Gem", es: "Gema del Caos" },
-        description: { ru: 'Случайный эффект каждые 3 хода.', en: "Random effects every 3 turns.", es: "Efectos aleatorios cada 3 turnos." },
-        icon: '🌈',
-        rarity: 'legendary',
-        category: 'utility',
-        cost: 290,
-        tags: ['random', 'chaos', 'special'],
-        allowedPieces: ['all'],
-        modifiers: { chaosEffect: true, chaosInterval: 3 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    infinity_stone: {
-        id: 'infinity_stone',
-        name: { ru: 'Камень Бесконечности', en: "Infinity Stone", es: "Piedra del Infinito" },
-        description: { ru: 'Фигура может походить на любую клетку доски.', en: "Piece can move anywhere on the board.", es: "La pieza puede moverse a cualquier parte del tablero." },
-        icon: '💜',
-        rarity: 'legendary',
-        category: 'movement',
-        cost: 350,
-        tags: ['queen', 'all-moves', 'power'],
-        allowedPieces: ['queen'],
-        // FIX: was `omnimove: true` — a key with zero consumers anywhere
-        // in the engine (dead on arrival). `moveAnywhere` is the key the
-        // engine actually implements (see beta_tester_cap below and the
-        // Horseshoe's 3-copy synergy) — same mechanic, correct name.
-        modifiers: { moveAnywhere: true },
-        extraDirections: [],
-        extraKnightOffsets: [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]],
-    },
-
-    omega_rune: {
-        id: 'omega_rune',
-        name: { ru: 'Омега Руна', en: "Omega Rune", es: "Runa Omega" },
-        description: { ru: '+1 дальность, +1 щит, +10 золота за взятие.', en: "+1 Range, +1 Shield, +10 Gold per capture.", es: "+1 Rango, +1 Escudo, +10 Oro por captura." },
-        icon: '🔺',
-        rarity: 'legendary',
-        category: 'utility',
-        cost: 400,
-        tags: ['all-stats', 'power', 'legendary'],
-        allowedPieces: ['all'],
-        modifiers: { extraRange: 1, shield: 1, goldPerCapture: 10 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
-
-    beta_tester_cap: {
-        id: 'beta_tester_cap',
-        name: { ru: 'Шапка Бета-Тестера', en: "Beta Tester Cap", es: "Gorra de Beta Tester" },
-        description: { ru: 'Сила разработчика: Ход куда угодно, 10 щитов.', en: "Dev powers: Move anywhere, 10 Shields.", es: "Poderes Dev: Muévete a cualquier parte, 10 Escudos." },
-        icon: '🧢',
-        rarity: 'legendary',
-        category: 'movement',
-        cost: 999,
-        tags: ['teleport', 'invincible', 'anywhere', 'dev'],
-        allowedPieces: ['all'],
-        modifiers: { moveAnywhere: true, shield: 10 },
-        extraDirections: [],
-        extraKnightOffsets: [],
-    },
+window.i18n = {
+    ru: {
+        // Menu
+        'menu.title': 'Шахматы',
+        'menu.subtitle': 'Расставь фигуры. Обыграй машину.',
+        'menu.run': 'Начать забег (Roguelike)',
+        'menu.continue': 'Продолжить забег',
+        'menu.continue.round': '(Раунд {round})',
+        'menu.free': 'Свободная',
+        'menu.mirror': 'Зеркальный бой',
+        'menu.creative': 'Творческий',
+        'menu.editor': 'Редактор',
+        'menu.difficulty': 'Сложность ИИ',
+        // FIX: was missing in all 3 languages — window.t() had no fallback
+        // and returned the raw key "menu.friend" for this main-menu button.
+        // Value taken from index.html's own pre-i18n fallback text.
+        'menu.friend': 'Игра с другом',
+
+        'diff.very_easy': '🐣 Очень легко',
+        'diff.easy': '🟢 Легко',
+        'diff.normal': '🔵 Средне',
+        'diff.hard': '🔴 Сложно',
+        'diff.crazy': '🤪 Сумасшедший',
+
+        'diff.desc.very_easy': '🐣 ИИ делает почти случайные ходы. Отличный старт для новичков!',
+        'diff.desc.easy': '🟢 ИИ думает поверхностно. Легко учиться.',
+        'diff.desc.normal': '🔵 Стандартный противник. Хорошо думает и неплохо играет.',
+        'diff.desc.hard': '🔴 ИИ просчитывает на 4 хода вперёд. Серьёзный вызов.',
+        'diff.desc.crazy': '🤪 ИИ специально делает ХУДШИЕ ходы. Играет в поддавки!',
+
+        // Creative Modal
+        'creative.title': 'Выберите формат Творческого режима',
+        'creative.pvbot': '🤖 Игра против Бота',
+        'creative.pvp': '👥 Игра друг против друга (PvP)',
+        'creative.cancel': 'Отмена',
+
+        // Setup Screen
+        'setup.army': 'Ваша Армия',
+        'setup.army.white': 'Белые — Ваша Армия',
+        'setup.army.black': 'Чёрные — Ваша Армия',
+        'setup.army.creative': 'Ваша Армия (Творческий)',
+        'setup.army_hint': 'Фигуры для расстановки',
+        'setup.stash': 'Сундук Предметов',
+        'setup.stash_hint': 'Перетащите на ваши фигуры или кликните фигуру',
+        'setup.pvp_black_turn': '♛ Второй игрок, расставляйте фигуры',
+        'setup.pvp_black_hint': 'Разместите чёрные фигуры на верхних клетках, затем нажмите «Начать игру»',
+        'setup.btn.standard': '♟ Стандарт',
+        'setup.btn.clear': '✕ Очистить',
+        'presets.title': 'Пресеты',
+        'presets.save': '💾 Сохранить',
+        'presets.hint': 'Сохранённые фигуры (тип + инвентарь). Сохранить или применить пресет можно в окне фигуры.',
+        'presets.hint_piece': 'Сохраните тип и инвентарь этой фигуры или примените сохранённый пресет',
+        // --- i18n-sweep: ранее захардкоженные строки app.js/multiplayer.js ---
+        'presets.empty': 'Нет сохранённых пресетов',
+        'presets.prompt.name': 'Название пресета:',
+        'presets.prompt.rename': 'Новое название пресета:',
+        'presets.confirm.overwrite': 'Пресет «{name}» уже существует. Перезаписать?',
+        'presets.confirm.delete': 'Удалить пресет «{name}»?',
+        'presets.err.name_exists': 'Пресет с названием «{name}» уже существует.',
+        'presets.err.apply': 'Не удалось применить пресет: повреждённые или устаревшие данные.',
+        'presets.err.quota': 'Недостаточно места в хранилище браузера. Удалите часть пресетов.',
+        'presets.err.storage': 'Не удалось сохранить пресет (ошибка хранилища браузера).',
+        'presets.msg.open_piece': 'Откройте фигуру (кликните по ней на доске), чтобы сохранить её как пресет.',
+        'presets.btn.apply_title': 'Применить к этой фигуре',
+        'presets.btn.rename': 'Переименовать',
+        'presets.btn.delete': 'Удалить',
+        'friend.status.joined': '✅ Друг подключился! Бросаем монетку...',
+        'friend.status.code_invalid': '⚠️ Введи 5-значный код!',
+        'friend.status.connecting': '⏳ Подключаемся...',
+        'friend.status.connected': '✅ Подключено! Ждём жребия...',
+        'friend.waiting_opponent': 'Ожидание оппонента...',
+        'friend.color.white': '⬜ Белые',
+        'friend.color.black': '⬛ Чёрные',
+        'setup.army.white': 'Ваша Армия (Белые)',
+        'setup.army.black': 'Чёрные — Ваша Армия',
+        'inv.slots.free': 'Слотов: {used} — свободно',
+        'inv.slots.full': 'Слотов: {used} — полный',
+        'inv.item.not_allowed': 'Предмет не подходит',
+        'raid.hud.pmc': 'Рейд (ЧВК)',
+        'raid.btn.fight': 'В БОЙ',
+        'raid.btn.again': 'Ещё раз',
+        'raid.over.scav_dead': 'Дикий убит',
+        'raid.over.pmc_dead': 'ЧВК разбит',
+        'raid.over.lost_text': 'Вы потеряли рейд. Схрон не пострадал.',
+        'mp.err.create_room': 'Не удалось создать комнату, попробуйте ещё раз',
+        'mp.err.network': 'Ошибка сети',
+        'mp.err.room_not_found': 'Комната не найдена',
+        'mp.err.connection': 'Ошибка подключения',
+        // NEW (Phase 2, Step 1): reconnect / forfeit UI strings.
+        'mp.reconnect.waiting': 'Оппонент отключился. Ждём переподключения...',
+        'mp.reconnect.forfeit_title_win': 'Победа по неявке',
+        'mp.reconnect.forfeit_title_lose': 'Поражение по неявке',
+        'mp.reconnect.forfeit_text': 'Оппонент не переподключился вовремя.',
+        'setup.btn.edit_black': 'Редактировать Черных',
+        'setup.btn.edit_white': 'Редактировать Белых',
+        'setup.warning': 'Разместите хотя бы одного короля!',
+        'setup.btn.start': 'В БОЙ ⚔️',
+        'setup.btn.back': 'Назад',
+
+        // Game Screen
+        'game.btn.undo': '↩ Отменить ход',
+        'game.btn.surrender': 'Сдаться',
+        'game.status.white_turn': '⚪ Ход Белых',
+        'game.status.black_turn': '⚫ Ход Черных',
+        'game.status.white_check': '⚪ Шах Белым!',
+        'game.status.black_check': '⚫ Шах Черным!',
+        'game.status.white_win': '⚪ Белые победили!',
+        'game.status.black_win': '⚫ Черные победили',
+        'game.status.draw': 'Ничья!',
+        'game.status.thinking': 'ИИ думает...',
+        'game.history': 'История ходов',
+        // FIX: was missing in all 3 languages (app.js:1953 — opponent name
+        // label, shown for PvP vs non-PvP respectively).
+        'game.player.black': 'Чёрные',
+        'game.player.opponent': 'Противник',
+
+        // Shop Screen
+        'shop.title': 'Торговец',
+        'shop.subtitle': 'Усильте свою армию перед следующим боем!',
+        'shop.items_title': 'Товары',
+        'shop.stash': 'Ваш сундук (нажмите для продажи)',
+        'shop.btn.continue': 'Продолжить забег ➡',
+        'shop.msg.full': 'Сундук заполнен (99/99)!',
+        'shop.msg.sell_for': 'Продать за {price} 🪙',
+        'shop.msg.sell_confirm': 'Продать {name} за {price} 🪙?',
+
+        // Game Over Modal
+        'gameover.title.win': 'Победа!',
+        'gameover.title.lose': 'Поражение',
+        'gameover.title.draw': 'Ничья',
+        'gameover.text.win': 'Шах и мат! Вы обыграли компьютер!',
+        'gameover.text.lose': 'Шах и мат. Компьютер победил.',
+        'gameover.text.stalemate': 'Пат!',
+        'gameover.text.50move': 'Правило 50 ходов',
+        'gameover.text.material': 'Недостаточно материала',
+        // FIX: added for the chess-engine.js threefold-repetition draw
+        // reason (introduced in an earlier pass of this audit) — without
+        // this, showGameOverModalDefault() fell back to "insufficient
+        // material", mislabeling the actual draw reason.
+        'gameover.text.repetition': 'Ничья повторением позиции',
+        'gameover.btn.shop': '🛒 В магазин',
+        'gameover.btn.menu': '🏠 В меню',
+        'gameover.btn.restart': '🔄 Заново',
+        'gameover.run.win.title': 'Победа в забеге!',
+        'gameover.run.win.text': 'Вы одолели всех врагов! Золото: {gold} 🪙',
+        'gameover.round.win.title': 'Победа в раунде!',
+        'gameover.round.win.text': 'за победу.\nИдём к торговцу...',
+        'gameover.run.lose': 'Ваша армия разгромлена. Забег окончен.',
+        'gameover.recruit': 'Вы захватили {count} фигур врага!',
+
+        // Piece Inventory
+        'piece.king': 'Король',
+        'piece.queen': 'Ферзь',
+        'piece.rook': 'Ладья',
+        'piece.bishop': 'Слон',
+        'piece.knight': 'Конь',
+        'piece.pawn': 'Пешка',
+        'piece.inv.subtitle.equipped': 'Экипированные предметы',
+        'piece.inv.subtitle.slots': 'Слоты экипировки ({count}/3)',
+        'piece.inv.slot': 'Слот',
+        'piece.inv.empty_slot': 'Пусто',
+        // FIX: was missing in all 3 languages (index.html:357 — "stash is
+        // empty" message). Value taken from index.html's own pre-i18n
+        // fallback text.
+        'piece.inv.empty': 'Сундук пуст.',
+        'piece.inv.click_equip': 'Кликните для экипировки',
+        'piece.inv.not_allowed': 'Не подходит для',
+        'piece.inv.no_slots': 'Нет слотов',
+        'piece.inv.equip': 'Экипировать',
+        'piece.inv.btn.remove': 'Убрать фигуру с доски',
+
+        // Run Status
+        'run.boss': 'БОСС',
+        'run.round': 'Раунд',
+        'run.creative_bot': 'Творческий vs Бот',
+        'run.creative_pvp': 'Творческий PvP',
+        'run.classic': 'Классика',
+
+        // Language switcher
+        'lang.title': 'Язык / Language',
+        'lang.ru': '🇷🇺 Русский',
+        'lang.en': '🇬🇧 English',
+        'lang.es': '🇪🇸 Español',
+
+        'surrender.title': 'Сдаться?',
+        'surrender.text': 'Вы уверены? Это засчитается как поражение.',
+        'surrender.confirm': 'Сдаться',
+        'surrender.cancel': 'Отмена',
+        'settings.title': 'Настройки',
+        'settings.tutorial': 'Обучение',
+        'settings.start_tutorial': 'Запустить обучение',
+        'settings.close': 'Закрыть',
+
+        // FIX: added while auditing index.html — a systematic scan (every
+        // Cyrillic string inside a tag with no data-i18n attribute) found
+        // 42 hits. Most of the Raid mode UI and the entire Friend Mode
+        // lobby modal were never touched by applyLocalization() OR by any
+        // window.t() call in app.js — they show this Russian text
+        // regardless of the selected language. See index.html and app.js
+        // for the corresponding fixes (app.js also gained
+        // data-i18n-title support for tooltip attributes, which
+        // data-i18n alone cannot reach since it only sets innerHTML).
+        'game.player.you': 'Игрок',
+        'menu.raid': 'Рейд',
+        'menu.raid_stash': 'Схрон',
+        'promotion.title': 'Превращение пешки',
+        'test.drive_label': 'Тест-Драйв',
+        'test.drive_hint': '(бесконечные ресурсы)',
+        'piece.inv.hover_title': 'Инвентарь фигуры',
+        'friend.create_room': 'Создать комнату',
+        'friend.or': 'или',
+        'friend.room_code_placeholder': 'Код комнаты',
+        'friend.join_room_btn': 'Войти',
+        'friend.your_code_text': 'Твой код комнаты — отправь другу:',
+        'friend.waiting_text': 'Ожидание подключения друга...',
+        'friend.ready_btn': 'Готов к расстановке!',
+        'friend.waiting_second_player': 'Ждём второго игрока...',
+        'friend.ready_count': '{count}/2 игроков готовы',
+        'friend.you_play_as_white': 'Вы играете за Белых!',
+        'friend.you_play_as_black': 'Вы играете за Чёрных!',
+        'raid.faction.title': 'Выбор Фракции',
+        'raid.faction.subtitle': 'Кем вы пойдёте в рейд?',
+        'raid.faction.pmc.name': 'ЧВК',
+        'raid.faction.pmc.desc': 'Элитный боец. Играете <strong>белыми</strong>. Снаряжение из вашего схрона.',
+        'raid.faction.pmc.tag': 'PMC &#8226; Белые',
+        'raid.faction.scav.name': 'Дикий',
+        'raid.faction.scav.desc': 'Мародёр. Играете <strong>чёрными</strong>. Случайный набор фигур. Лутаете врагов.',
+        'raid.faction.scav.tag': 'SCAV &#8226; Чёрные',
+        'raid.stash.title': 'Схрон',
+        'raid.stash.subtitle': 'Ваши трофеи из рейдов',
+        'raid.stash.pieces_title': 'Запасные фигуры',
+        'raid.stash.pieces_empty': 'Нет запасных фигур',
+        'raid.stash.items_title': 'Предметы',
+        'raid.stash.items_empty': 'Схрон пуст. Сыграйте рейд!',
+        'raid.loot.title': 'Рейд завершён!',
+        'raid.loot.subtitle': 'Выберите до 3 предметов для схрона',
+        'raid.loot.confirm_btn': 'Забрать в схрон',
+        'raid.loot.skip_btn': 'Выйти без лута',
+    },
+
+    en: {
+        // Menu
+        'menu.title': 'Chess',
+        'menu.subtitle': 'Place your pieces. Beat the machine.',
+        'menu.run': 'Start Run (Roguelike)',
+        'menu.continue': 'Continue Run',
+        'menu.continue.round': '(Round {round})',
+        'menu.free': 'Free Play',
+        'menu.mirror': 'Mirror Match',
+        'menu.creative': 'Creative Mode',
+        'menu.editor': 'Editor',
+        'menu.difficulty': 'AI Difficulty',
+        'menu.friend': 'Play with a Friend',
+
+        'diff.very_easy': '🐣 Very Easy',
+        'diff.easy': '🟢 Easy',
+        'diff.normal': '🔵 Normal',
+        'diff.hard': '🔴 Hard',
+        'diff.crazy': '🤪 Crazy',
+
+        'diff.desc.very_easy': '🐣 AI makes almost random moves. Great for beginners!',
+        'diff.desc.easy': '🟢 AI thinks shallowly. Easy to learn.',
+        'diff.desc.normal': '🔵 Standard opponent. Thinks well and plays decently.',
+        'diff.desc.hard': '🔴 AI calculates 4 moves ahead. A serious challenge.',
+        'diff.desc.crazy': '🤪 AI deliberately makes the WORST moves. Plays to lose!',
+
+        'creative.title': 'Select Creative Mode format',
+        'creative.pvbot': '🤖 Play vs Bot',
+        'creative.pvp': '👥 Play vs Friend (PvP)',
+        'creative.cancel': 'Cancel',
+
+        'setup.army': 'Your Army',
+        'setup.army.white': 'White — Your Army',
+        'setup.army.black': 'Black — Your Army',
+        'setup.army.creative': 'Your Army (Creative)',
+        'setup.army_hint': 'Pieces to place',
+        'setup.stash': 'Item Stash',
+        'setup.stash_hint': 'Drag onto your pieces or click a piece',
+        'setup.pvp_black_turn': '♛ Second player, place your pieces',
+        'setup.pvp_black_hint': 'Place the black pieces on the top squares, then press “Start game”',
+        'setup.btn.standard': '♟ Standard',
+        'setup.btn.clear': '✕ Clear',
+        'presets.title': 'Presets',
+        'presets.save': '💾 Save',
+        'presets.hint': 'Saved pieces (type + inventory). Save or apply a preset from the piece window.',
+        'presets.hint_piece': 'Save this piece\'s type and inventory, or apply a saved preset',
+        // --- i18n-sweep: previously hardcoded app.js/multiplayer.js strings ---
+        'presets.empty': 'No saved presets',
+        'presets.prompt.name': 'Preset name:',
+        'presets.prompt.rename': 'New preset name:',
+        'presets.confirm.overwrite': 'Preset "{name}" already exists. Overwrite?',
+        'presets.confirm.delete': 'Delete preset "{name}"?',
+        'presets.err.name_exists': 'A preset named "{name}" already exists.',
+        'presets.err.apply': 'Failed to apply preset: corrupted or outdated data.',
+        'presets.err.quota': 'Not enough browser storage space. Delete some presets.',
+        'presets.err.storage': 'Failed to save the preset (browser storage error).',
+        'presets.msg.open_piece': 'Open a piece (click it on the board) to save it as a preset.',
+        'presets.btn.apply_title': 'Apply to this piece',
+        'presets.btn.rename': 'Rename',
+        'presets.btn.delete': 'Delete',
+        'friend.status.joined': '✅ Friend joined! Flipping a coin...',
+        'friend.status.code_invalid': '⚠️ Enter the 5-digit code!',
+        'friend.status.connecting': '⏳ Connecting...',
+        'friend.status.connected': '✅ Connected! Waiting for the coin flip...',
+        'friend.waiting_opponent': 'Waiting for opponent...',
+        'friend.color.white': '⬜ White',
+        'friend.color.black': '⬛ Black',
+        'setup.army.white': 'Your Army (White)',
+        'setup.army.black': 'Black — Your Army',
+        'inv.slots.free': 'Slots: {used} — available',
+        'inv.slots.full': 'Slots: {used} — full',
+        'inv.item.not_allowed': 'Item not allowed',
+        'raid.hud.pmc': 'Raid (PMC)',
+        'raid.btn.fight': 'FIGHT',
+        'raid.btn.again': 'Play again',
+        'raid.over.scav_dead': 'Scav killed',
+        'raid.over.pmc_dead': 'PMC wiped',
+        'raid.over.lost_text': 'You lost the raid. Your stash is untouched.',
+        'mp.err.create_room': 'Failed to create the room, please try again',
+        'mp.err.network': 'Network error',
+        'mp.err.room_not_found': 'Room not found',
+        'mp.err.connection': 'Connection error',
+        // NEW (Phase 2, Step 1): reconnect / forfeit UI strings.
+        'mp.reconnect.waiting': 'Opponent disconnected. Waiting for reconnect...',
+        'mp.reconnect.forfeit_title_win': 'Win by forfeit',
+        'mp.reconnect.forfeit_title_lose': 'Loss by forfeit',
+        'mp.reconnect.forfeit_text': "The opponent didn't reconnect in time.",
+        'setup.btn.edit_black': 'Edit Black',
+        'setup.btn.edit_white': 'Edit White',
+        'setup.warning': 'Place at least one king!',
+        'setup.btn.start': 'TO BATTLE ⚔️',
+        'setup.btn.back': 'Back',
+
+        'game.btn.undo': '↩ Undo move',
+        'game.btn.surrender': 'Surrender',
+        'game.status.white_turn': '⚪ White\'s Turn',
+        'game.status.black_turn': '⚫ Black\'s Turn',
+        'game.status.white_check': '⚪ Check to White!',
+        'game.status.black_check': '⚫ Check to Black!',
+        'game.status.white_win': '⚪ White Wins!',
+        'game.status.black_win': '⚫ Black Wins',
+        'game.status.draw': 'Draw!',
+        'game.status.thinking': 'AI is thinking...',
+        'game.history': 'Move History',
+        'game.player.black': 'Black',
+        'game.player.opponent': 'Opponent',
+
+        'shop.title': 'Merchant',
+        'shop.subtitle': 'Strengthen your army before the next battle!',
+        'shop.items_title': 'Items',
+        'shop.stash': 'Your stash (click to sell)',
+        'shop.btn.continue': 'Continue Run ➡',
+        'shop.msg.full': 'Stash is full (99/99)!',
+        'shop.msg.sell_for': 'Sell for {price} 🪙',
+        'shop.msg.sell_confirm': 'Sell {name} for {price} 🪙?',
+
+        'gameover.title.win': 'Victory!',
+        'gameover.title.lose': 'Defeat',
+        'gameover.title.draw': 'Draw',
+        'gameover.text.win': 'Checkmate! You beat the computer!',
+        'gameover.text.lose': 'Checkmate. The computer won.',
+        'gameover.text.stalemate': 'Stalemate!',
+        'gameover.text.50move': '50-move rule',
+        'gameover.text.material': 'Insufficient material',
+        'gameover.text.repetition': 'Draw by repetition',
+        'gameover.btn.shop': '🛒 To Shop',
+        'gameover.btn.menu': '🏠 Main Menu',
+        'gameover.btn.restart': '🔄 Restart',
+        'gameover.run.win.title': 'Run Victory!',
+        'gameover.run.win.text': 'You defeated all enemies! Gold: {gold} 🪙',
+        'gameover.round.win.title': 'Round Won!',
+        'gameover.round.win.text': 'for winning.\nGoing to the merchant...',
+        'gameover.run.lose': 'Your army was destroyed. The run is over.',
+        'gameover.recruit': 'You captured {count} enemy pieces!',
+
+        'piece.king': 'King',
+        'piece.queen': 'Queen',
+        'piece.rook': 'Rook',
+        'piece.bishop': 'Bishop',
+        'piece.knight': 'Knight',
+        'piece.pawn': 'Pawn',
+        'piece.inv.subtitle.equipped': 'Equipped Items',
+        'piece.inv.subtitle.slots': 'Equipment Slots ({count}/3)',
+        'piece.inv.slot': 'Slot',
+        'piece.inv.empty_slot': 'Empty',
+        'piece.inv.empty': 'Stash is empty.',
+        'piece.inv.click_equip': 'Click to equip',
+        'piece.inv.not_allowed': 'Not allowed for',
+        'piece.inv.no_slots': 'No slots available',
+        'piece.inv.equip': 'Equip',
+        'piece.inv.btn.remove': 'Remove piece from board',
+
+        'run.boss': 'BOSS',
+        'run.round': 'Round',
+        'run.creative_bot': 'Creative vs Bot',
+        'run.creative_pvp': 'Creative PvP',
+        'run.classic': 'Classic',
+
+        'lang.title': 'Language / Язык',
+        'lang.ru': '🇷🇺 Russian',
+        'lang.en': '🇬🇧 English',
+        'lang.es': '🇪🇸 Spanish',
+
+        'surrender.title': 'Surrender?',
+        'surrender.text': 'Are you sure? This will count as a defeat.',
+        'surrender.confirm': 'Surrender',
+        'surrender.cancel': 'Cancel',
+        'settings.title': 'Settings',
+        'settings.tutorial': 'Tutorial',
+        'settings.start_tutorial': 'Start Tutorial',
+        'settings.close': 'Close',
+
+        'game.player.you': 'Player',
+        'menu.raid': 'Raid',
+        'menu.raid_stash': 'Stash',
+        'promotion.title': 'Pawn Promotion',
+        'test.drive_label': 'Test Drive',
+        'test.drive_hint': '(unlimited resources)',
+        'piece.inv.hover_title': 'Piece Inventory',
+        'friend.create_room': 'Create Room',
+        'friend.or': 'or',
+        'friend.room_code_placeholder': 'Room Code',
+        'friend.join_room_btn': 'Join',
+        'friend.your_code_text': 'Your room code — send it to your friend:',
+        'friend.waiting_text': 'Waiting for friend to join...',
+        'friend.ready_btn': 'Ready to Set Up!',
+        'friend.waiting_second_player': 'Waiting for the other player...',
+        'friend.ready_count': '{count}/2 players ready',
+        'friend.you_play_as_white': 'You are playing White!',
+        'friend.you_play_as_black': 'You are playing Black!',
+        'raid.faction.title': 'Choose Your Faction',
+        'raid.faction.subtitle': 'Who will you raid as?',
+        'raid.faction.pmc.name': 'PMC',
+        'raid.faction.pmc.desc': 'Elite operator. You play <strong>White</strong>. Gear comes from your stash.',
+        'raid.faction.pmc.tag': 'PMC &#8226; White',
+        'raid.faction.scav.name': 'Scav',
+        'raid.faction.scav.desc': 'Scavenger. You play <strong>Black</strong>. Random loadout. Loot your enemies.',
+        'raid.faction.scav.tag': 'SCAV &#8226; Black',
+        'raid.stash.title': 'Stash',
+        'raid.stash.subtitle': 'Your loot from past raids',
+        'raid.stash.pieces_title': 'Spare Pieces',
+        'raid.stash.pieces_empty': 'No spare pieces',
+        'raid.stash.items_title': 'Items',
+        'raid.stash.items_empty': 'Stash is empty. Play a raid!',
+        'raid.loot.title': 'Raid Complete!',
+        'raid.loot.subtitle': 'Choose up to 3 items for your stash',
+        'raid.loot.confirm_btn': 'Take to Stash',
+        'raid.loot.skip_btn': 'Leave Without Loot',
+    },
+
+    es: {
+        // Menu
+        'menu.title': 'Ajedrez',
+        'menu.subtitle': 'Coloca tus piezas. Vence a la máquina.',
+        'menu.run': 'Iniciar Carrera (Roguelike)',
+        'menu.continue': 'Continuar Carrera',
+        'menu.continue.round': '(Ronda {round})',
+        'menu.free': 'Juego Libre',
+        'menu.mirror': 'Partida Espejo',
+        'menu.creative': 'Modo Creativo',
+        'menu.editor': 'Editor',
+        'menu.difficulty': 'Dificultad de la IA',
+        'menu.friend': 'Jugar con un Amigo',
+
+        'diff.very_easy': '🐣 Muy Fácil',
+        'diff.easy': '🟢 Fácil',
+        'diff.normal': '🔵 Normal',
+        'diff.hard': '🔴 Difícil',
+        'diff.crazy': '🤪 Loco',
+
+        'diff.desc.very_easy': '🐣 La IA hace movimientos casi aleatorios. ¡Genial para principiantes!',
+        'diff.desc.easy': '🟢 La IA piensa superficialmente. Fácil de aprender.',
+        'diff.desc.normal': '🔵 Oponente estándar. Piensa bien y juega decentemente.',
+        'diff.desc.hard': '🔴 La IA calcula 4 movimientos por adelantado. Un desafío serio.',
+        'diff.desc.crazy': '🤪 La IA hace deliberadamente los PEORES movimientos. ¡Juega a perder!',
+
+        'creative.title': 'Selecciona el formato del Modo Creativo',
+        'creative.pvbot': '🤖 Jugar contra Bot',
+        'creative.pvp': '👥 Jugar contra Amigo (PvP)',
+        'creative.cancel': 'Cancelar',
+
+        'setup.army': 'Tu Ejército',
+        'setup.army.white': 'Blancas — Tu Ejército',
+        'setup.army.black': 'Negras — Tu Ejército',
+        'setup.army.creative': 'Tu Ejército (Creativo)',
+        'setup.army_hint': 'Piezas para colocar',
+        'setup.stash': 'Alijo de Objetos',
+        'setup.stash_hint': 'Arrastra a tus piezas o haz clic en una',
+        'setup.pvp_black_turn': '♛ Segundo jugador, coloca tus piezas',
+        'setup.pvp_black_hint': 'Coloca las piezas negras en las casillas superiores y pulsa «Iniciar partida»',
+        'setup.btn.standard': '♟ Estándar',
+        'setup.btn.clear': '✕ Borrar',
+        'presets.title': 'Ajustes',
+        'presets.save': '💾 Guardar',
+        'presets.hint': 'Piezas guardadas (tipo + inventario). Guarda o aplica un preset desde la ventana de la pieza.',
+        'presets.hint_piece': 'Guarda el tipo y el inventario de esta pieza, o aplica un preset guardado',
+        // --- i18n-sweep: cadenas antes fijas de app.js/multiplayer.js ---
+        'presets.empty': 'No hay presets guardados',
+        'presets.prompt.name': 'Nombre del preset:',
+        'presets.prompt.rename': 'Nuevo nombre del preset:',
+        'presets.confirm.overwrite': 'El preset «{name}» ya existe. ¿Sobrescribir?',
+        'presets.confirm.delete': '¿Eliminar el preset «{name}»?',
+        'presets.err.name_exists': 'Ya existe un preset llamado «{name}».',
+        'presets.err.apply': 'No se pudo aplicar el preset: datos dañados u obsoletos.',
+        'presets.err.quota': 'No hay suficiente espacio en el navegador. Elimina algunos presets.',
+        'presets.err.storage': 'No se pudo guardar el preset (error de almacenamiento del navegador).',
+        'presets.msg.open_piece': 'Abre una pieza (haz clic en ella en el tablero) para guardarla como preset.',
+        'presets.btn.apply_title': 'Aplicar a esta pieza',
+        'presets.btn.rename': 'Renombrar',
+        'presets.btn.delete': 'Eliminar',
+        'friend.status.joined': '✅ ¡Tu amigo se unió! Lanzando la moneda...',
+        'friend.status.code_invalid': '⚠️ ¡Introduce el código de 5 dígitos!',
+        'friend.status.connecting': '⏳ Conectando...',
+        'friend.status.connected': '✅ ¡Conectado! Esperando el sorteo...',
+        'friend.waiting_opponent': 'Esperando al oponente...',
+        'friend.color.white': '⬜ Blancas',
+        'friend.color.black': '⬛ Negras',
+        'setup.army.white': 'Tu Ejército (Blancas)',
+        'setup.army.black': 'Negras — Tu Ejército',
+        'inv.slots.free': 'Ranuras: {used} — disponible',
+        'inv.slots.full': 'Ranuras: {used} — lleno',
+        'inv.item.not_allowed': 'Objeto no permitido',
+        'raid.hud.pmc': 'Raid (PMC)',
+        'raid.btn.fight': 'AL COMBATE',
+        'raid.btn.again': 'Otra vez',
+        'raid.over.scav_dead': 'Scav eliminado',
+        'raid.over.pmc_dead': 'PMC aniquilado',
+        'raid.over.lost_text': 'Perdiste el raid. Tu alijo está intacto.',
+        'mp.err.create_room': 'No se pudo crear la sala, inténtalo de nuevo',
+        'mp.err.network': 'Error de red',
+        'mp.err.room_not_found': 'Sala no encontrada',
+        'mp.err.connection': 'Error de conexión',
+        // NEW (Phase 2, Step 1): reconnect / forfeit UI strings.
+        'mp.reconnect.waiting': 'El oponente se desconectó. Esperando reconexión...',
+        'mp.reconnect.forfeit_title_win': 'Victoria por abandono',
+        'mp.reconnect.forfeit_title_lose': 'Derrota por abandono',
+        'mp.reconnect.forfeit_text': 'El oponente no se reconectó a tiempo.',
+        'setup.btn.edit_black': 'Editar Negras',
+        'setup.btn.edit_white': 'Editar Blancas',
+        'setup.warning': '¡Coloca al menos un rey!',
+        'setup.btn.start': 'A LA BATALLA ⚔️',
+        'setup.btn.back': 'Volver',
+
+        'game.btn.undo': '↩ Deshacer mov.',
+        'game.btn.surrender': 'Rendirse',
+        'game.status.white_turn': '⚪ Turno de Blancas',
+        'game.status.black_turn': '⚫ Turno de Negras',
+        'game.status.white_check': '⚪ ¡Jaque a Blancas!',
+        'game.status.black_check': '⚫ ¡Jaque a Negras!',
+        'game.status.white_win': '⚪ ¡Ganan las Blancas!',
+        'game.status.black_win': '⚫ Ganan las Negras',
+        'game.status.draw': '¡Empate!',
+        'game.status.thinking': 'La IA está pensando...',
+        'game.history': 'Historial',
+        'game.player.black': 'Negras',
+        'game.player.opponent': 'Oponente',
+
+        'shop.title': 'Mercader',
+        'shop.subtitle': '¡Refuerza tu ejército antes de la próxima batalla!',
+        'shop.items_title': 'Objetos',
+        'shop.stash': 'Tu alijo (clic para vender)',
+        'shop.btn.continue': 'Continuar ➡',
+        'shop.msg.full': '¡Alijo lleno (99/99)!',
+        'shop.msg.sell_for': 'Vender por {price} 🪙',
+        'shop.msg.sell_confirm': '¿Vender {name} por {price} 🪙?',
+
+        'gameover.title.win': '¡Victoria!',
+        'gameover.title.lose': 'Derrota',
+        'gameover.title.draw': 'Empate',
+        'gameover.text.win': '¡Jaque Mate! ¡Venciste a la computadora!',
+        'gameover.text.lose': 'Jaque Mate. La computadora ganó.',
+        'gameover.text.stalemate': '¡Ahogado!',
+        'gameover.text.50move': 'Regla de 50 mov.',
+        'gameover.text.material': 'Material insuficiente',
+        'gameover.text.repetition': 'Tablas por repetición',
+        'gameover.btn.shop': '🛒 A la Tienda',
+        'gameover.btn.menu': '🏠 Menu Principal',
+        'gameover.btn.restart': '🔄 Reiniciar',
+        'gameover.run.win.title': '¡Victoria de la Carrera!',
+        'gameover.run.win.text': '¡Derrotaste a todos los enemigos! Oro: {gold} 🪙',
+        'gameover.round.win.title': '¡Ronda Ganada!',
+        'gameover.round.win.text': 'por ganar.\nYendo al mercader...',
+        'gameover.run.lose': 'Tu ejército fue destruido. La carrera ha terminado.',
+        'gameover.recruit': '¡Capturaste {count} piezas enemigas!',
+
+        'piece.king': 'Rey',
+        'piece.queen': 'Reina',
+        'piece.rook': 'Torre',
+        'piece.bishop': 'Alfil',
+        'piece.knight': 'Caballo',
+        'piece.pawn': 'Peón',
+        'piece.inv.subtitle.equipped': 'Objetos Equipados',
+        'piece.inv.subtitle.slots': 'Ranuras ({count}/3)',
+        'piece.inv.slot': 'Ranura',
+        'piece.inv.empty_slot': 'Vacío',
+        'piece.inv.empty': 'El alijo está vacío.',
+        'piece.inv.click_equip': 'Clic para equipar',
+        'piece.inv.not_allowed': 'No válido para',
+        'piece.inv.no_slots': 'Sin ranuras',
+        'piece.inv.equip': 'Equipar',
+        'piece.inv.btn.remove': 'Quitar pieza del tablero',
+
+        'run.boss': 'JEFE',
+        'run.round': 'Ronda',
+        'run.creative_bot': 'Creativo vs Bot',
+        'run.creative_pvp': 'Creativo PvP',
+        'run.classic': 'Clásico',
+
+        'lang.title': 'Idioma / Language',
+        'lang.ru': '🇷🇺 Ruso',
+        'lang.en': '🇬🇧 Inglés',
+        'lang.es': '🇪🇸 Español',
+
+        'surrender.title': '¿Rendirse?',
+        'surrender.text': '¿Estás seguro? Esto contará como derrota.',
+        'surrender.confirm': 'Rendirse',
+        'surrender.cancel': 'Cancelar',
+        'settings.title': 'Ajustes',
+        'settings.tutorial': 'Tutorial',
+        'settings.start_tutorial': 'Iniciar Tutorial',
+        'settings.close': 'Cerrar',
+
+        'game.player.you': 'Jugador',
+        'menu.raid': 'Asalto',
+        'menu.raid_stash': 'Alijo',
+        'promotion.title': 'Coronación de Peón',
+        'test.drive_label': 'Prueba de Manejo',
+        'test.drive_hint': '(recursos ilimitados)',
+        'piece.inv.hover_title': 'Inventario de la Pieza',
+        'friend.create_room': 'Crear Sala',
+        'friend.or': 'o',
+        'friend.room_code_placeholder': 'Código de Sala',
+        'friend.join_room_btn': 'Entrar',
+        'friend.your_code_text': 'Tu código de sala — envíaselo a tu amigo:',
+        'friend.waiting_text': 'Esperando a que tu amigo se una...',
+        'friend.ready_btn': '¡Listo para Configurar!',
+        'friend.waiting_second_player': 'Esperando al otro jugador...',
+        'friend.ready_count': '{count}/2 jugadores listos',
+        'friend.you_play_as_white': '¡Juegas con Blancas!',
+        'friend.you_play_as_black': '¡Juegas con Negras!',
+        'raid.faction.title': 'Elige tu Facción',
+        'raid.faction.subtitle': '¿Con quién harás el asalto?',
+        'raid.faction.pmc.name': 'PMC',
+        'raid.faction.pmc.desc': 'Operador de élite. Juegas con <strong>Blancas</strong>. El equipo viene de tu alijo.',
+        'raid.faction.pmc.tag': 'PMC &#8226; Blancas',
+        'raid.faction.scav.name': 'Scav',
+        'raid.faction.scav.desc': 'Carroñero. Juegas con <strong>Negras</strong>. Equipo aleatorio. Saquea a tus enemigos.',
+        'raid.faction.scav.tag': 'SCAV &#8226; Negras',
+        'raid.stash.title': 'Alijo',
+        'raid.stash.subtitle': 'Tu botín de asaltos anteriores',
+        'raid.stash.pieces_title': 'Piezas de Repuesto',
+        'raid.stash.pieces_empty': 'No hay piezas de repuesto',
+        'raid.stash.items_title': 'Objetos',
+        'raid.stash.items_empty': 'El alijo está vacío. ¡Juega un asalto!',
+        'raid.loot.title': '¡Asalto Completado!',
+        'raid.loot.subtitle': 'Elige hasta 3 objetos para tu alijo',
+        'raid.loot.confirm_btn': 'Llevar al Alijo',
+        'raid.loot.skip_btn': 'Salir sin Botín',
+    }
 };
 
-
-
-
-// --- Helper Functions ---
-
-function getItemById(id) {
-    return ITEMS_DB[id] || null;
-}
-
-function getItemsByRarity(rarity) {
-    return Object.values(ITEMS_DB).filter(i => i.rarity === rarity);
-}
-
-function getItemsByCategory(category) {
-    return Object.values(ITEMS_DB).filter(i => i.category === category);
-}
-
-function getAllItems() {
-    return Object.values(ITEMS_DB);
-}
-
-/**
- * In-place Fisher-Yates shuffle. `arr.sort(() => Math.random() - 0.5)` (the
- * previous implementation) is a well-known biased shuffle — it does not
- * produce a uniform permutation — this does.
- * @template T
- * @param {T[]} arr
- * @returns {T[]} The same array, shuffled.
- */
-function _shuffleItems(arr) {
-    for (let i = arr.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-}
-
-function getRandomItems(count, excludeIds = []) {
-    // `disabled` items never enter any pool (see the per-item comments).
-    const pool = Object.values(ITEMS_DB).filter(i => !i.disabled && !excludeIds.includes(i.id));
-    const shuffled = _shuffleItems(pool.slice());
-    const result = [];
-    for (let i = 0; i < Math.min(count, shuffled.length); i++) {
-        result.push(shuffled[i]);
-    }
-    return result;
-}
-
-function getShopItems(count, playerGold, luckBonus = 0) {
-    // Weighted by rarity. FIX: the old version compared the roll against
-    // weights.legendary / +epic / +rare individually and fell back to
-    // 'common' by `else` — so weights.common was declared but NEVER READ,
-    // and the whole distribution silently depended on the other three
-    // summing to exactly 100 (which only holds because the luckBonus terms
-    // +2L +3L -5L happen to cancel to 0 — fragile, not an intentional
-    // invariant). `rare` also had no floor and goes negative once
-    // luckBonus > 6. Normalizing against the TRUE total of all four
-    // weights (with `rare` floored at 0) fixes both issues while
-    // preserving the exact same relative proportions as before.
-    const weights = {
-        common: 50,
-        rare: Math.max(0, 30 - luckBonus * 5),
-        epic: 15 + luckBonus * 3,
-        legendary: 5 + luckBonus * 2
-    };
-    const totalWeight = weights.common + weights.rare + weights.epic + weights.legendary;
-    // `disabled` items never enter the shop (see the per-item comments).
-    const pool = Object.values(ITEMS_DB).filter(i => !i.disabled);
-    const result = [];
-    const used = new Set();
-
-    for (let i = 0; i < count && pool.length > 0; i++) {
-        // Pick rarity first, rolling against the full normalized total.
-        const roll = Math.random() * totalWeight;
-        let rarity = 'common';
-        let acc = 0;
-        for (const tier of ['legendary', 'epic', 'rare', 'common']) {
-            acc += weights[tier];
-            if (roll < acc) { rarity = tier; break; }
-        }
-
-        // Find items of that rarity.
-        let candidates = pool.filter(it => it.rarity === rarity && !used.has(it.id));
-        if (candidates.length === 0) candidates = pool.filter(it => !used.has(it.id));
-        if (candidates.length === 0) break;
-
-        const item = candidates[Math.floor(Math.random() * candidates.length)];
-        // Clone defensively (including nested modifiers) so mutating one
-        // shop offer's stats can never leak into the shared ITEMS_DB
-        // template or into other copies of the same item in this batch.
-        result.push({ ...item, modifiers: { ...(item.modifiers || {}) } });
-        used.add(item.id);
-    }
-
-    return result;
-}
-
-// Rarity colors and labels
-const RARITY_CONFIG = {
-    common:    { label: { ru: 'Обычный', en: 'Common', es: 'Común' },     color: '#9a95b0', bgColor: 'rgba(154,149,176,0.1)', border: 'rgba(154,149,176,0.3)' },
-    rare:      { label: { ru: 'Редкий', en: 'Rare', es: 'Raro' },      color: '#4488ff', bgColor: 'rgba(68,136,255,0.1)',  border: 'rgba(68,136,255,0.3)'  },
-    epic:      { label: { ru: 'Эпический', en: 'Epic', es: 'Épico' },   color: '#9d93fa', bgColor: 'rgba(157,147,250,0.1)', border: 'rgba(157,147,250,0.3)' },
-    legendary: { label: { ru: 'Легендарный', en: 'Legendary', es: 'Legendario' }, color: '#f0c048', bgColor: 'rgba(240,192,72,0.1)',  border: 'rgba(240,192,72,0.3)'  },
+window.t = function(key) {
+    const lang = localStorage.getItem('chess_lang') || 'ru';
+    return (window.i18n[lang] && window.i18n[lang][key]) ||
+           (window.i18n['ru'] && window.i18n['ru'][key]) ||
+           key;
 };
 
-const CATEGORY_LABELS = {
-    movement: { ru: '🏃 Движение', en: '🏃 Movement', es: '🏃 Movimiento' },
-    offense:  '🗡 Атака',
-    defense:  '🛡 Защита',
-    utility:  '🔮 Утилиты',
+window.t_obj = function(obj) {
+    if (!obj) return '';
+    if (typeof obj === 'string') return obj;
+    const lang = localStorage.getItem('chess_lang') || 'ru';
+    return obj[lang] || obj['en'] || obj['ru'] || '';
+};
+
+window.t_item = function(item, field) {
+    if (!item) return '';
+    const lang = localStorage.getItem('chess_lang') || 'ru';
+
+    // Support if field itself is a translated object { ru: "...", en: "..." }
+    if (item[field] && typeof item[field] === 'object') {
+        return item[field][lang] || item[field]['en'] || item[field]['ru'] || '';
+    }
+
+    return item[field] || '';
 };
