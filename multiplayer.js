@@ -287,9 +287,53 @@ window.Multiplayer = (function () {
         sendMove({ type: 'equip', ...equipData });
     }
 
+    // ─── TASK-7: Connection lifecycle ────────────────────────────────────────
+    // Firebase exposes .info/connected: a boolean that flips false on any
+    // network interruption and back to true when the socket is restored.
+    // We watch it here and forward the events to app.js via callbacks so the
+    // UI can show a "reconnecting…" banner without importing Firebase directly.
+    let _connRef = null;
+    let _connListener = null;
+
+    /**
+     * Start watching the Firebase connection state.
+     * Callbacks: onDisconnect(), onReconnect()
+     * (separate from the room-level callbacks so callers can start watching
+     *  even before a room is joined, e.g. on page load.)
+     */
+    function watchConnection(onDisconnectCb, onReconnectCb) {
+        // If already watching, detach the previous listener first.
+        if (_connRef && _connListener) {
+            _connRef.off('value', _connListener);
+        }
+        _connRef = db.ref('.info/connected');
+        let initialLoad = true; // skip the very first "false" that Firebase emits before confirming auth
+        _connListener = _connRef.on('value', (snap) => {
+            if (initialLoad) {
+                initialLoad = false;
+                return; // suppress the cold-start false
+            }
+            if (snap.val() === false) {
+                if (onDisconnectCb) onDisconnectCb();
+            } else {
+                // Re-mark our presence so the opponent knows we're back
+                if (_roomCode && _role) {
+                    db.ref(`rooms/${_roomCode}/${_role}/online`).set(true).catch(() => {});
+                }
+                if (onReconnectCb) onReconnectCb();
+            }
+        });
+    }
+
     function cleanup() {
         _listeners.forEach(({ ref, event, cb }) => ref.off(event, cb));
         _listeners = [];
+        // Stop connection watcher
+        if (_connRef && _connListener) {
+            _connRef.off('value', _connListener);
+            _connRef = null;
+            _connListener = null;
+        }
         _roomCode = null;
         _role = null;
         _callbacks = {};
@@ -298,5 +342,5 @@ window.Multiplayer = (function () {
     function getRoomCode() { return _roomCode; }
     function getRole() { return _role; }
 
-    return { createRoom, joinRoom, sendSetup, sendColors, sendLobbyReady, sendMove, sendEquip, cleanup, getRoomCode, getRole };
+    return { createRoom, joinRoom, sendSetup, sendColors, sendLobbyReady, sendMove, sendEquip, watchConnection, cleanup, getRoomCode, getRole };
 })();

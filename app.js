@@ -1553,6 +1553,8 @@
             friendSetupReady = false;
             friendOpponentSetupReady = false;
             isFriendMode = false; isPvP = false;
+            // TASK-7: hide reconnect banner when leaving
+            _hideReconnectBanner();
             document.getElementById('modal-friend-lobby').style.display = 'none';
         });
 
@@ -1562,6 +1564,23 @@
             if (btn) { btn.disabled = true; btn.textContent = '⏳ ' + window.t('friend.waiting_second_player'); }
             document.getElementById('coin-ready-count').textContent = window.t('friend.ready_count').replace('{count}', '1');
             window.Multiplayer.sendLobbyReady();
+        });
+
+        // TASK-7: "Quit" button inside reconnect banner — cleanup and return to menu
+        document.getElementById('btn-reconnect-quit')?.addEventListener('click', () => {
+            _hideReconnectBanner();
+            const code = window.Multiplayer ? window.Multiplayer.getRoomCode() : null;
+            const role = window.Multiplayer ? window.Multiplayer.getRole() : null;
+            if (role === 'host' && code) {
+                try { firebase.database().ref(`rooms/${code}`).remove(); } catch(e) {}
+            }
+            if (window.Multiplayer) window.Multiplayer.cleanup();
+            myAssignedColor = null;
+            friendSetupReady = false;
+            friendOpponentSetupReady = false;
+            isFriendMode = false; isPvP = false;
+            setupLocked = false;
+            showScreen('menu');
         });
 
         document.getElementById('btn-mirror-match').addEventListener('click', () => {
@@ -2066,6 +2085,38 @@
         if (overlay) overlay.style.display = 'flex';
     }
 
+    // ── TASK-7: Reconnect banner helpers ──────────────────────────────────────
+    let _reconnectTimeout = null;
+
+    function _showReconnectBanner() {
+        const banner = document.getElementById('reconnect-banner');
+        const titleEl = document.getElementById('reconnect-title');
+        const subEl = document.getElementById('reconnect-sub');
+        const quitBtn = document.getElementById('btn-reconnect-quit');
+        if (!banner) return;
+        if (titleEl) titleEl.textContent = 'Соединение потеряно';
+        if (subEl) subEl.textContent = 'Переподключаюсь...';
+        if (quitBtn) quitBtn.style.display = 'none';
+        banner.style.display = 'flex';
+
+        // After 30s without reconnect, show the "quit" button
+        clearTimeout(_reconnectTimeout);
+        _reconnectTimeout = setTimeout(() => {
+            if (subEl) subEl.textContent = 'Не удалось восстановить соединение.';
+            if (quitBtn) quitBtn.style.display = '';
+        }, 30000);
+    }
+
+    function _hideReconnectBanner() {
+        clearTimeout(_reconnectTimeout);
+        const banner = document.getElementById('reconnect-banner');
+        const subEl = document.getElementById('reconnect-sub');
+        if (!banner) return;
+        if (subEl) subEl.textContent = 'Соединение восстановлено!';
+        // Fade out after short delay
+        setTimeout(() => { banner.style.display = 'none'; }, 1500);
+    }
+
     /** Transition both players from lobby into the correct Setup screen */
     function _startFriendSetup() {
         friendSetupReady = false;
@@ -2091,6 +2142,16 @@
             // Simulate clicking "setup black" to initialise the black setup zone
             isBlackSetup = false; // temporarily so startBlackSetup() does the right thing
             startBlackSetup();
+        }
+
+        // TASK-7: Start watching Firebase connection for this session
+        if (window.Multiplayer && window.Multiplayer.watchConnection) {
+            window.Multiplayer.watchConnection(
+                // onDisconnect
+                () => _showReconnectBanner(),
+                // onReconnect
+                () => _hideReconnectBanner()
+            );
         }
     }
 

@@ -31,6 +31,8 @@ window.i18n = {
         // and returned the raw key "menu.friend" for this main-menu button.
         // Value taken from index.html's own pre-i18n fallback text.
         'menu.friend': 'Игра с другом',
+        // Continue run button — shows current round number
+        'menu.continue.round': 'Продолжить забег (Раунд {round})',
 
         'diff.very_easy': '🐣 Очень легко',
         'diff.easy': '🟢 Легко',
@@ -224,6 +226,7 @@ window.i18n = {
         'menu.editor': 'Editor',
         'menu.difficulty': 'AI Difficulty',
         'menu.friend': 'Play with a Friend',
+        'menu.continue.round': 'Continue Run (Round {round})',
 
         'diff.very_easy': '🐣 Very Easy',
         'diff.easy': '🟢 Easy',
@@ -391,6 +394,7 @@ window.i18n = {
         'menu.editor': 'Editor',
         'menu.difficulty': 'Dificultad de la IA',
         'menu.friend': 'Jugar con un Amigo',
+        'menu.continue.round': 'Continuar Carrera (Ronda {round})',
 
         'diff.very_easy': '🐣 Muy Fácil',
         'diff.easy': '🟢 Fácil',

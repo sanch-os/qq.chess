@@ -281,6 +281,16 @@
         </div>
     </div>
 
+    <!-- TASK-7: Reconnect Banner (shown when multiplayer connection is lost) -->
+    <div id="reconnect-banner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:9999; background:rgba(30,20,60,0.97); border-bottom:2px solid #f04; color:#fff; font-family:inherit; padding:14px 20px; display:none; align-items:center; gap:14px; box-shadow:0 4px 24px rgba(0,0,0,0.6);">
+        <span style="font-size:1.6rem;">📡</span>
+        <div style="flex:1;">
+            <div id="reconnect-title" style="font-weight:700; font-size:1rem; margin-bottom:2px;">Соединение потеряно</div>
+            <div id="reconnect-sub" style="font-size:0.82rem; opacity:0.75;">Переподключаюсь...</div>
+        </div>
+        <button id="btn-reconnect-quit" class="btn btn-danger btn-small" style="display:none; flex-shrink:0;">Сдаться и выйти</button>
+    </div>
+
     <!-- Surrender Confirm Modal -->
     <div id="modal-surrender" class="modal-overlay">
         <div class="modal glass-panel" style="max-width: 380px; text-align: center;">
