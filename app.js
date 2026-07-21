@@ -30,6 +30,7 @@
     let friendSetupReady = false; // true = local player submitted setup
     let friendOpponentSetupReady = false; // true = opponent submitted setup
     let friendOpponentSetupData = null; // data received from opponent
+    let setupLocked = false; // true = player pressed "В БОЙ", setup frozen
 
 
 
@@ -50,6 +51,9 @@
     let dragSessionSeq = 0;        // monotonically increasing counter
     let activeDragSessionId = null; // id of the session currently in progress
     let dragPhase = 'idle';
+
+    // --- TASK-1: Tap-to-place state ---
+    let tapSelectedType = null; // piece type selected via tap (e.g. 'queen')
 
     // --- Localization ---
     function applyLocalization() {
@@ -466,6 +470,29 @@
                     symbol: PIECE_SYMBOLS.white[type],
                 };
             });
+
+            // TASK-1: Tap-to-select handler (click, no drag required)
+            el.addEventListener('click', (e) => {
+                if (setupLocked) return;
+                const isInf = isCreativeMode || isTestDriveMode;
+                const invItem = inventory[index];
+                if (!invItem || (!isInf && invItem.remaining <= 0)) return;
+
+                const type = el.dataset.type;
+                if (tapSelectedType === type) {
+                    // Second tap on same piece = deselect
+                    clearTapSelect();
+                } else {
+                    // Select this piece type
+                    clearTapSelect();
+                    tapSelectedType = type;
+                    el.classList.add('tap-selected');
+                    const boardEl = document.getElementById('board-setup');
+                    if (boardEl) boardEl.classList.add('tap-select-active');
+                }
+                e.stopPropagation();
+            });
+
             inventoryEl.appendChild(el);
         });
     }
@@ -825,10 +852,21 @@
         }
     }
 
+    // --- TASK-1: Tap-to-place helpers ---
+    function clearTapSelect() {
+        tapSelectedType = null;
+        document.querySelectorAll('.inventory-item.tap-selected').forEach(el => el.classList.remove('tap-selected'));
+        const boardEl = document.getElementById('board-setup');
+        if (boardEl) boardEl.classList.remove('tap-select-active');
+    }
+
     function onSetupCellClick(e) {
         // Ignore the click the browser synthesizes right after a pointer drag,
         // otherwise a drag that ends on a piece would immediately open its modal.
         if (_dragJustEnded) return;
+        // TASK-3: if setup is locked after pressing В БОЙ, ignore all clicks
+        if (setupLocked) return;
+
         const cell = e.target.closest('.cell');
         if (!cell) return;
         const r = parseInt(cell.dataset.row);
@@ -838,8 +876,38 @@
         const setupColor = isBlackSetup ? 'black' : 'white';
         const validZone = isBlackSetup ? (r <= 1) : (r >= 6);
 
+        // TASK-1: If a piece type is tap-selected, place it on a valid empty cell
+        if (tapSelectedType && validZone && !piece) {
+            const isInfinite = isCreativeMode || isTestDriveMode;
+            const idx = inventory.findIndex(it => it.type === tapSelectedType);
+            if (idx !== -1) {
+                const invItem = inventory[idx];
+                if (isInfinite || invItem.remaining > 0) {
+                    engine.placePiece(r, c, tapSelectedType, setupColor);
+                    if (!isInfinite) invItem.remaining--;
+                    renderBoard(boardSetup);
+                    renderInventory();
+                    updateStartButton();
+                    // Keep tap-select active so player can place more of the same piece
+                    // Only deselect if supply is now 0
+                    if (!isInfinite && invItem.remaining <= 0) {
+                        clearTapSelect();
+                    }
+                } else {
+                    clearTapSelect();
+                }
+            } else {
+                clearTapSelect();
+            }
+            return;
+        }
+
+        // TASK-1: Tap on existing own piece in valid zone -> open piece inventory (equip items)
         if (piece && piece.color === setupColor && validZone) {
             openPieceInventory(r, c);
+        } else {
+            // Tap elsewhere deselects
+            clearTapSelect();
         }
     }
 
@@ -1618,13 +1686,23 @@
                 if (!engine.hasKing('white')) return;
                 document.getElementById('modal-raid').classList.add('active');
             } else if (isFriendMode) {
+                // TASK-3: prevent double-press — if already locked, ignore
+                if (setupLocked) return;
+
+                const myColor = myAssignedColor || (isBlackSetup ? 'black' : 'white');
+                if (!engine.hasKing(myColor)) return;
+
+                // TASK-3: lock the setup screen immediately
+                setupLocked = true;
+                const setupScreen = document.getElementById('screen-setup');
+                if (setupScreen) setupScreen.classList.add('setup-locked');
+
                 // T4: In Friend Mode — send setup data and wait for opponent
                 const btn = document.getElementById('btn-start-game');
                 btn.disabled = true;
                 btn.innerHTML = '<span class="btn-icon">⏳</span> <span>Ожидание оппонента...</span>';
                 friendSetupReady = true;
                 if (window.Multiplayer) {
-                    const myColor = isBlackSetup ? 'black' : 'white';
                     const rawPieces = [];
                     for (let r = 0; r < 8; r++) {
                         for (let c = 0; c < 8; c++) {
@@ -1682,6 +1760,7 @@
         document.getElementById('btn-undo').addEventListener('click', () => {
             if (isAIThinking || engine.moveHistory.length === 0) return;
             if (isRoguelikeMode) return;
+            if (isFriendMode) return; // TASK-4: no undo in multiplayer
             engine.undoLastMove();
             recalcCapturedPieces();
             lastMove = null;
@@ -1901,6 +1980,8 @@
         // Ensure any in-flight pointer drag is fully torn down on screen change
         // (removes window listeners + ghost + state).
         cancelPointerDrag();
+        // TASK-1: Clear any active tap-selection
+        clearTapSelect();
     }
 
     // =====================================================
@@ -1990,6 +2071,7 @@
         friendSetupReady = false;
         friendOpponentSetupReady = false;
         friendOpponentSetupData = null;
+        setupLocked = false; // TASK-3: unlock setup when starting fresh
         isRoguelikeMode = false; isCreativeMode = false; isPvP = true;
         isMirrorMode = false; isFriendMode = true;
         isRaidMode = false; isRaidSetupMode = false; isTestDriveMode = false;
@@ -2054,7 +2136,10 @@
 
     function startGameFromSetup() {
 
-        if (!engine.hasKing(isBlackSetup ? 'black' : 'white')) return;
+        // TASK-5 FIX: in friend mode we always check our OWN color (myAssignedColor),
+        // NOT isBlackSetup (which can be false for the black player after merge).
+        const checkColor = isFriendMode ? myAssignedColor : (isBlackSetup ? 'black' : 'white');
+        if (!engine.hasKing(checkColor || 'white')) return;
 
         // PvP Creative: after white setup, go to black setup
         if (isCreativeMode && isPvP && !isBlackSetup) {
@@ -2062,7 +2147,18 @@
             return;
         }
 
-        if (isRoguelikeMode) {
+        // TASK-5 FIX: Friend Mode branch MUST come first.
+        // Without this branch, isFriendMode falls through to the `else` below
+        // which calls engine.setupBlackStandard() — wiping the black player's custom army!
+        if (isFriendMode) {
+            // Both armies are already on the board:
+            //   - Our pieces: placed during our own setup screen
+            //   - Opponent pieces: merged in _checkBothReady() from Firebase data
+            // Do NOT call engine.setupBlackStandard() or setupBlackMirror()!
+            document.getElementById('run-gold').textContent = '';
+            document.getElementById('run-round').textContent = '⚔️ Игра с другом';
+            document.getElementById('btn-undo').style.display = 'none'; // TASK-4
+        } else if (isRoguelikeMode) {
             engine.setupBlackStandard();
             runManager.startRound(engine);
             const encounter = runManager.getCurrentEncounter();
@@ -2133,6 +2229,11 @@
             document.getElementById('run-gold').textContent = '';
             document.getElementById('run-round').textContent = window.t('run.classic');
             document.getElementById('btn-undo').style.display = 'block';
+        }
+
+        // TASK-4: hide undo button in any multiplayer context (safety net)
+        if (isFriendMode) {
+            document.getElementById('btn-undo').style.display = 'none';
         }
 
         // Reset opponent panel to default for non-roguelike modes
